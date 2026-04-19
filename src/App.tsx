@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { GameEngine } from './game/GameEngine';
 import { HUD } from './components/HUD';
 import { Toolbar } from './components/Toolbar';
+import { Timeline } from './components/Timeline';
 import './App.css';
 
 export function App() {
@@ -28,6 +29,7 @@ export function App() {
     <div className="app">
       <canvas ref={canvasRef} className="game-canvas" />
       <HUD />
+      <Timeline />
       <Toolbar />
     </div>
   );

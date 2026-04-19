@@ -1,21 +1,77 @@
 import { create } from 'zustand';
-import { Cell, GameMetrics, ToolType, ZoneType, ZONE_COSTS, maxUpgradesForPhase } from '../types/game';
+import { Cell, GameMetrics, Milestone, MilestoneType, ToolType, ZoneType, ZONE_COSTS, maxUpgradesForPhase } from '../types/game';
+
+// ─── Milestone detection ──────────────────────────────────────────────────────
+
+function detectMilestones(
+  cells:    Map<string, Cell>,
+  existing: Milestone[],
+  metrics:  GameMetrics,
+): Milestone[] {
+  const result: Milestone[] = [];
+  const has = (id: string) =>
+    existing.some(m => m.id === id) || result.some(m => m.id === id);
+
+  const push = (id: string, label: string, type: MilestoneType) =>
+    result.push({ id, tick: metrics.tick, label, type });
+
+  // ── First-zone milestones ────────────────────────────────────────────────
+  const zoneChecks: [string, ZoneType, string][] = [
+    ['first_road',        'road',        '1st Road'],
+    ['first_residential', 'residential', '1st Residential'],
+    ['first_commercial',  'commercial',  '1st Commercial'],
+    ['first_public',      'public',      '1st Institution'],
+    ['first_mixed',       'mixed',       'Mixed-Use Built'],
+    ['first_employment',  'employment',  '1st Employment'],
+  ];
+  const cellArr = [...cells.values()];
+  zoneChecks.forEach(([id, zone, label]) => {
+    if (!has(id) && cellArr.some(c => c.zone === zone))
+      push(id, label, 'zone');
+  });
+  if (!has('first_emp_overlay') && cellArr.some(c => c.employment))
+    push('first_emp_overlay', 'Emp. Overlay', 'zone');
+
+  // ── Population milestones ────────────────────────────────────────────────
+  const popSteps: [string, number, string, MilestoneType][] = [
+    ['pop_1000',   1_000,   'Pop 1K',     'population'],
+    ['pop_5000',   5_000,   'Pop 5K',     'population'],
+    ['pop_10000',  10_000,  'Pop 10K',    'population'],
+    ['pop_50000',  50_000,  'Phase 2 ★',  'phase'],
+    ['pop_100000', 100_000, 'Pop 100K',   'population'],
+  ];
+  popSteps.forEach(([id, threshold, label, type]) => {
+    if (!has(id) && metrics.population >= threshold) push(id, label, type);
+  });
+
+  // ── City-health milestones ───────────────────────────────────────────────
+  const healthSteps: [string, number, string][] = [
+    ['health_50', 50, 'Health 50%'],
+    ['health_75', 75, 'Health 75%'],
+  ];
+  healthSteps.forEach(([id, threshold, label]) => {
+    if (!has(id) && metrics.cityHealth >= threshold) push(id, label, 'health');
+  });
+
+  return result;
+}
 
 export const cellKey = (x: number, z: number) => `${x},${z}`;
 
 interface GameStore {
-  cells: Map<string, Cell>;
-  metrics: GameMetrics;
+  cells:       Map<string, Cell>;
+  metrics:     GameMetrics;
+  milestones:  Milestone[];
   selectedTool: ToolType;
   diagnosticMode: boolean;
   hoveredCell: { x: number; z: number } | null;
 
-  initCells:       (cells: Map<string, Cell>) => void;
-  placeZone:       (x: number, z: number) => void;
-  setSelectedTool: (tool: ToolType) => void;
+  initCells:        (cells: Map<string, Cell>) => void;
+  placeZone:        (x: number, z: number) => void;
+  setSelectedTool:  (tool: ToolType) => void;
   toggleDiagnostic: () => void;
-  setHoveredCell:  (cell: { x: number; z: number } | null) => void;
-  tick:            () => void;
+  setHoveredCell:   (cell: { x: number; z: number } | null) => void;
+  tick:             () => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -28,6 +84,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     walkability: 0,
     tick:       0,
   },
+  milestones:     [{ id: 'founded', tick: 0, label: 'City Founded', type: 'start' as const }],
   selectedTool:   'road',
   diagnosticMode: false,
   hoveredCell:    null,
@@ -129,7 +186,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setHoveredCell:   (cell) => set({ hoveredCell: cell }),
 
   tick: () => {
-    const { cells, metrics } = get();
+    const { cells, metrics, milestones } = get();
     let population       = 0;
     let commercialCount  = 0;
     let publicCount      = 0;
@@ -156,16 +213,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     );
     const budgetGrowth = cityHealth * 0.5 + population * 0.1 + employmentCount * 2;
 
+    const newMetrics: GameMetrics = {
+      ...metrics,
+      population,
+      walkability: Math.round(walkability),
+      education:   Math.round(education),
+      cityHealth:  Math.round(cityHealth),
+      budget:      metrics.budget + budgetGrowth,
+      tick:        metrics.tick + 1,
+    };
+
+    const newMilestones = detectMilestones(cells, milestones, newMetrics);
     set({
-      metrics: {
-        ...metrics,
-        population,
-        walkability: Math.round(walkability),
-        education:   Math.round(education),
-        cityHealth:  Math.round(cityHealth),
-        budget:      metrics.budget + budgetGrowth,
-        tick:        metrics.tick + 1,
-      },
+      metrics: newMetrics,
+      milestones: newMilestones.length > 0 ? [...milestones, ...newMilestones] : milestones,
     });
   },
 }));

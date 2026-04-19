@@ -48,3 +48,12 @@ export const ZONE_COSTS: Partial<Record<ToolType, number>> = {
 
 export const GRID_SIZE = 32;
 export const CELL_SIZE = 2; // Three.js world units per cell
+
+export type MilestoneType = 'start' | 'zone' | 'population' | 'health' | 'phase';
+
+export interface Milestone {
+  id:    string;
+  tick:  number;
+  label: string;
+  type:  MilestoneType;
+}

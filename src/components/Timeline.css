@@ -1,0 +1,148 @@
+/* ── Wrapper ────────────────────────────────────────────────────────────── */
+
+.tl-wrap {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50%;
+  padding-bottom: 8px;
+  z-index: 19;          /* sits behind the toolbar (z-index 20) */
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+/* ── Panel ──────────────────────────────────────────────────────────────── */
+
+.tl-panel {
+  position: relative;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 12px;
+  overflow: visible;
+}
+
+/* ── Axis ───────────────────────────────────────────────────────────────── */
+
+.tl-axis {
+  position: absolute;
+  left: 14px;
+  right: 44px;
+  top: 27px;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.06),
+    rgba(0, 0, 0, 0.20) 15%,
+    rgba(0, 0, 0, 0.20) 85%,
+    rgba(0, 0, 0, 0.06)
+  );
+}
+
+/* ── Event container ────────────────────────────────────────────────────── */
+
+.tl-event {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 76px;
+  transform: translateX(-50%);
+}
+
+/* First milestone: left-anchor so "City Founded" stays inside the frame */
+.tl-event.tl-first {
+  transform: translateX(10px);
+}
+
+.tl-dot {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  top: 24px;            /* axis_y − radius = 27 − 3 */
+}
+
+.tl-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-year {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 500;
+  color: #AAAAAA;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* Even index: label above axis, year below */
+.tl-above .tl-label { top:  7px; }
+.tl-above .tl-year  { top: 34px; }
+
+/* Odd index: year above axis, label below */
+.tl-below .tl-year  { top:  8px; }
+.tl-below .tl-label { top: 34px; }
+
+/* First milestone always shows label above */
+.tl-first .tl-label { top:  7px; }
+.tl-first .tl-year  { top: 34px; }
+
+/* ── Now marker ─────────────────────────────────────────────────────────── */
+
+.tl-now {
+  position: absolute;
+  right: 10px;
+  top: 0;
+  bottom: 0;
+  width: 38px;
+}
+
+.tl-now-label {
+  position: absolute;
+  right: 2px;
+  top: 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #0055EE;
+  text-align: right;
+}
+
+.tl-now-diamond {
+  position: absolute;
+  right: 7px;
+  top: 20px;            /* axis_y − half = 27 − 7 */
+  width: 14px;
+  height: 14px;
+  background: #0055EE;
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.tl-now-year {
+  position: absolute;
+  right: 2px;
+  top: 37px;
+  font-size: 8px;
+  font-weight: 600;
+  color: #0055EE;
+  letter-spacing: 0.05em;
+  text-align: right;
+}
