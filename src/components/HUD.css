@@ -1,0 +1,162 @@
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ── Panel base ─────────────────────────────────────────────────────────── */
+
+.hud-panel {
+  pointer-events: all;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 14px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.07),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Metrics panel (top-left) ───────────────────────────────────────────── */
+
+.metrics-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 210px;
+  padding: 16px 18px 14px;
+}
+
+.city-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: #1a1a1a;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.city-title span {
+  color: #0055EE;
+}
+
+.city-title em {
+  font-style: normal;
+  color: #999;
+  margin-left: 4px;
+  font-weight: 500;
+  font-size: 10px;
+}
+
+.metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.metric-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.metric-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #999;
+}
+
+.metric-value {
+  font-size: 17px;
+  font-weight: 500;
+  color: #111;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.metric-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-track {
+  height: 3px;
+  background: #E8E5E2;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.metric-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tick-label {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: #CCC;
+}
+
+/* ── Top-right controls ─────────────────────────────────────────────────── */
+
+.hud-top-right {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  gap: 8px;
+  pointer-events: all;
+}
+
+.btn-diagnostic {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #333;
+  letter-spacing: 0.03em;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.btn-diagnostic:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.11);
+}
+
+.btn-diagnostic.is-active {
+  background: #0055EE;
+  color: #fff;
+  border-color: #0044CC;
+  box-shadow: 0 2px 12px rgba(0, 85, 238, 0.30);
+}

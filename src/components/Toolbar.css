@@ -1,0 +1,111 @@
+.toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 22px;
+  pointer-events: none;
+}
+
+/* ── Tool strip ─────────────────────────────────────────────────────────── */
+
+.toolbar-inner {
+  pointer-events: all;
+  display: flex;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.09),
+    0 1px 4px rgba(0, 0, 0, 0.05);
+  padding: 7px;
+}
+
+.tool-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 15px 8px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  background: transparent;
+  min-width: 74px;
+  transition: background 0.13s ease;
+}
+
+.tool-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.tool-btn.is-active {
+  background: rgba(0, 85, 238, 0.07);
+}
+
+.tool-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: block;
+  transition: box-shadow 0.18s ease;
+}
+
+.tool-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+
+.tool-key {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 700;
+  color: #BBB;
+  background: transparent;
+  border: none;
+  padding: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Hint bar ───────────────────────────────────────────────────────────── */
+
+.toolbar-hint {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.50);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.tool-cost {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+.tool-cost.no-budget {
+  color: #FF7070;
+  background: rgba(255, 60, 60, 0.18);
+}
