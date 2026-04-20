@@ -4,8 +4,8 @@ import { fbm } from './noise';
 import { cellKey } from '../store/gameStore';
 
 const TERRAIN_COLOR: Record<TerrainType, number> = {
-  land:  0xD5D0CA,
-  water: 0x7AAFC0,
+  land:  0xCEC8B2,   // warm stone pavement
+  water: 0x5AAEC8,   // richer teal-blue
   cliff: 0x9E8F82,
 };
 
@@ -159,7 +159,7 @@ export class GridRenderer {
     });
 
     const geo  = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat  = new THREE.LineBasicMaterial({ color: 0xBBB5AE, transparent: true, opacity: 0.28 });
+    const mat  = new THREE.LineBasicMaterial({ color: 0x9A9080, transparent: true, opacity: 0.45 });
     this.terrainGroup.add(new THREE.LineSegments(geo, mat));
   }
 

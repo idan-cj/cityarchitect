@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GridRenderer, buildCellMap } from './Grid';
 import { BuildingManager } from './Buildings';
@@ -44,8 +45,8 @@ export class GameEngine {
 
     // ── Scene ────────────────────────────────────────────────────────────────
     this.scene            = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xC4D4E0);
-    this.scene.fog        = new THREE.Fog(0xC4D4E0, 70, 130);
+    this.scene.background = new THREE.Color(0x87CEEB);
+    this.scene.fog        = new THREE.Fog(0x87CEEB, 85, 150);
 
     // ── Camera ───────────────────────────────────────────────────────────────
     const aspect    = canvas.clientWidth / canvas.clientHeight;
@@ -76,6 +77,8 @@ export class GameEngine {
     const cells = buildCellMap();
     useGameStore.getState().initCells(cells);
     this.gridRenderer.buildTerrain(cells);
+    this.buildingManager.rebuildAll(cells); // initial trees + any pre-placed zones
+    this.buildHorizon();
 
     // ── Events ───────────────────────────────────────────────────────────────
     window.addEventListener('resize', this.onResize);
@@ -90,24 +93,80 @@ export class GameEngine {
   }
 
   private setupLighting(): void {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.40));
+    // Generous ambient — handcrafted diorama feel, no dark crevices
+    this.scene.add(new THREE.AmbientLight(0xFFF8F0, 0.60));
 
-    const hemi = new THREE.HemisphereLight(0xB8D0E8, 0x8A7D70, 0.55);
+    // Warm sky, earthy ground bounce
+    const hemi = new THREE.HemisphereLight(0xC8E0FF, 0xA89060, 0.70);
     hemi.position.set(0, 50, 0);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xFFF8F0, 1.0);
-    sun.position.set(35, 55, 25);
-    sun.castShadow              = true;
+    // Soft warm sun — slight overcast angle keeps shadows gentle
+    const sun = new THREE.DirectionalLight(0xFFF2D0, 0.95);
+    sun.position.set(40, 55, 25);
+    sun.castShadow           = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.near      = 1;
-    sun.shadow.camera.far       = 180;
-    sun.shadow.camera.left      = -70;
-    sun.shadow.camera.right     =  70;
-    sun.shadow.camera.top       =  70;
-    sun.shadow.camera.bottom    = -70;
-    sun.shadow.bias             = -0.0004;
+    sun.shadow.camera.near   = 1;
+    sun.shadow.camera.far    = 180;
+    sun.shadow.camera.left   = -70;
+    sun.shadow.camera.right  =  70;
+    sun.shadow.camera.top    =  70;
+    sun.shadow.camera.bottom = -70;
+    sun.shadow.bias          = -0.0003;
     this.scene.add(sun);
+
+    // Cool blue fill — lifts shadow darkness on the opposite face
+    const fill = new THREE.DirectionalLight(0xC0D8FF, 0.38);
+    fill.position.set(-30, 18, -20);
+    this.scene.add(fill);
+  }
+
+  // Distant city silhouette on all four horizons
+  private buildHorizon(): void {
+    const hash = (a: number, b: number) => {
+      const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+      return n - Math.floor(n);
+    };
+
+    const buildStrip = (stripW: number, seed: number): THREE.BufferGeometry => {
+      const parts: THREE.BufferGeometry[] = [];
+      let x = -stripW / 2;
+      let i = 0;
+      while (x < stripW / 2) {
+        const w = 1.8 + hash(i, seed)     * 5.5;
+        const h = 2.5 + hash(i, seed + 1) * 11.0;
+        const g = new THREE.BoxGeometry(w, h, 0.4);
+        const c = new THREE.Color(0x3C4455);
+        const n = g.attributes.position.count;
+        const d = new Float32Array(n * 3);
+        for (let v = 0; v < n; v++) { d[v*3]=c.r; d[v*3+1]=c.g; d[v*3+2]=c.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(d, 3));
+        g.translate(x + w / 2, h / 2, 0);
+        parts.push(g);
+        x += w + 0.25;
+        i++;
+      }
+      return mergeGeometries(parts, false)!;
+    };
+
+    const mat  = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0 });
+    const D    = GRID_SIZE * CELL_SIZE * 0.72; // distance from city centre
+    const W    = 180;
+
+    const sides: [number, number, number, number][] = [
+      [CENTER,     0, CENTER - D,  0          ],
+      [CENTER,     0, CENTER + D,  Math.PI    ],
+      [CENTER - D, 0, CENTER,      Math.PI / 2],
+      [CENTER + D, 0, CENTER,     -Math.PI / 2],
+    ];
+
+    sides.forEach(([px, py, pz, ry], idx) => {
+      const geo  = buildStrip(W, idx * 37);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(px, py, pz);
+      mesh.rotation.y = ry;
+      this.scene.add(mesh);
+    });
   }
 
   // ── Event handlers ────────────────────────────────────────────────────────
@@ -168,17 +227,10 @@ export class GameEngine {
     const updated = useGameStore.getState().cells;
     const cell    = updated.get(cellKey(x, z));
 
-    // Rebuild mesh when zone, upgrade level, or employment changed.
+    // Single rebuildAll handles the changed cell and any affected road directions
     if (cell && (cell.zone !== prevZone || cell.upgrades !== prevUpgrades || cell.employment !== prevEmployment)) {
-      this.buildingManager.updateBuilding(cell, updated);
-
-      // Re-render adjacent road cells — their direction markings may have changed.
-      for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        const neighbour = updated.get(cellKey(x + dx, z + dz));
-        if (neighbour?.zone === 'road') {
-          this.buildingManager.updateBuilding(neighbour, updated);
-        }
-      }
+      this.buildingManager.rebuildAll(updated);
+      if (cell.zone !== 'empty') this.buildingManager.spawnPopAnim(x, z);
     }
   };
 
@@ -197,6 +249,7 @@ export class GameEngine {
     this.animationId   = requestAnimationFrame(this.animate);
     const delta        = this.clock.getDelta();
     this.controls.update();
+    this.buildingManager.update(delta);
     this.agentManager.update(useGameStore.getState().cells, delta);
     this.renderer.render(this.scene, this.camera);
   };

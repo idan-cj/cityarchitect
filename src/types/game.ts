@@ -1,5 +1,11 @@
-export type ZoneType = 'empty' | 'road' | 'residential' | 'commercial' | 'public' | 'mixed' | 'employment';
-export type ToolType = 'select' | 'road' | 'residential' | 'commercial' | 'public' | 'demolish' | 'employment';
+export type ZoneType =
+  | 'empty' | 'road' | 'residential' | 'commercial' | 'mixed' | 'employment'
+  | 'public_security' | 'public_education' | 'public_government';
+
+export type ToolType =
+  | 'select' | 'road' | 'residential' | 'commercial' | 'demolish' | 'employment'
+  | 'public_security' | 'public_education' | 'public_government';
+
 export type TerrainType = 'land' | 'water' | 'cliff';
 
 export interface Cell {
@@ -28,22 +34,26 @@ export interface GameMetrics {
 }
 
 export const ZONE_COLORS: Record<ZoneType, string> = {
-  road:        '#787878',
-  residential: '#F5C842',
-  commercial:  '#4A8ECC',
-  public:      '#5BB85D',
-  mixed:       '#F5C842',
-  employment:  '#7A6EA8',
-  empty:       '#D0CDC8',
+  road:             '#787878',
+  residential:      '#F5C842',
+  commercial:       '#4A8ECC',
+  public_education: '#E8904A',
+  public_security:  '#1E5080',
+  public_government:'#C0B890',
+  mixed:            '#F5C842',
+  employment:       '#7A6EA8',
+  empty:            '#D0CDC8',
 };
 
 export const ZONE_COSTS: Partial<Record<ToolType, number>> = {
-  road:        10,
-  residential: 50,
-  commercial:  75,
-  public:      100,
-  employment:  80,
-  demolish:    25,
+  road:             10,
+  residential:      50,
+  commercial:       75,
+  public_education: 100,
+  public_security:  120,
+  public_government:150,
+  employment:       80,
+  demolish:         25,
 };
 
 export const GRID_SIZE = 32;
