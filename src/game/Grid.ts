@@ -4,8 +4,8 @@ import { fbm } from './noise';
 import { cellKey } from '../store/gameStore';
 
 const TERRAIN_COLOR: Record<TerrainType, number> = {
-  land:  0xCEC8B2,   // warm stone pavement
-  water: 0x5AAEC8,   // richer teal-blue
+  land:  0xD8D0B8,   // warm concrete
+  water: 0x6BA6A8,   // soft teal-blue
   cliff: 0x9E8F82,
 };
 
@@ -106,18 +106,21 @@ export class GridRenderer {
     const byType: Record<TerrainType, Cell[]> = { land: [], water: [], cliff: [] };
     cells.forEach((c) => byType[c.terrain].push(c));
 
-    this.buildInstanced(byType.land,  TERRAIN_COLOR.land,  0);
-    this.buildInstanced(byType.water, TERRAIN_COLOR.water, -0.06);
-    this.buildInstanced(byType.cliff, TERRAIN_COLOR.cliff, -0.1);
+    this.buildInstanced(byType.land,  TERRAIN_COLOR.land,  0,     0.92, 0);
+    this.buildInstanced(byType.water, TERRAIN_COLOR.water, -0.06, 0.18, 0.08);
+    this.buildInstanced(byType.cliff, TERRAIN_COLOR.cliff, -0.1,  0.95, 0);
 
     this.buildGridLines(byType.land);
   }
 
-  private buildInstanced(cells: Cell[], color: number, yOffset: number): void {
+  private buildInstanced(
+    cells: Cell[], color: number, yOffset: number,
+    roughness = 0.92, metalness = 0,
+  ): void {
     if (cells.length === 0) return;
 
     const geo  = new THREE.PlaneGeometry(CELL_SIZE - 0.05, CELL_SIZE - 0.05);
-    const mat  = new THREE.MeshLambertMaterial({ color });
+    const mat  = new THREE.MeshStandardMaterial({ color, roughness, metalness });
     const mesh = new THREE.InstancedMesh(geo, mat, cells.length);
     mesh.receiveShadow = true;
 

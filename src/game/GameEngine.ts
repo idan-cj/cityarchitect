@@ -102,17 +102,17 @@ export class GameEngine {
   }
 
   private setupLighting(): void {
-    // Warm ambient — removes pitch-black crevices
-    this.scene.add(new THREE.AmbientLight(0xFFECD0, 0.55));
+    // Soft ambient matching sky tone — no pitch-black crevices
+    this.scene.add(new THREE.AmbientLight(0xFFF4E0, 0.50));
 
-    // Golden-hour hemisphere: warm sky above, ochre ground bounce below
-    const hemi = new THREE.HemisphereLight(0xFFD090, 0x906040, 0.60);
+    // Late-afternoon hemisphere: warm cream sky, soft grey-blue ground bounce
+    const hemi = new THREE.HemisphereLight(0xFFF4E0, 0xDFE2E5, 0.65);
     hemi.position.set(0, 50, 0);
     this.scene.add(hemi);
 
-    // Low-angle golden sun — casts long, warm shadows across buildings
-    const sun = new THREE.DirectionalLight(0xFFD060, 1.0);
-    sun.position.set(60, 35, 20);
+    // Warm afternoon sun — slightly elevated, long soft shadows
+    const sun = new THREE.DirectionalLight(0xFFF0C8, 0.90);
+    sun.position.set(50, 45, 25);
     sun.castShadow           = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near   = 1;
@@ -124,9 +124,9 @@ export class GameEngine {
     sun.shadow.bias          = -0.0003;
     this.scene.add(sun);
 
-    // Cool blue-sky fill — counters the warm sun on shadowed faces
-    const fill = new THREE.DirectionalLight(0xA0C8FF, 0.30);
-    fill.position.set(-25, 20, -25);
+    // Soft blue-grey fill from opposite side — lifts shadowed faces gently
+    const fill = new THREE.DirectionalLight(0xC8D8E8, 0.28);
+    fill.position.set(-30, 22, -20);
     this.scene.add(fill);
   }
 

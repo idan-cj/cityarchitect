@@ -25,51 +25,55 @@ function rng(x: number, z: number, slot: number): number {
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
-// 4 stucco/plaster flavours — no pure primaries
+// 4 warm stucco/plaster tones — muted, high-roughness diorama palette
 const FLAVORS = [
-  { body: 0xEDDFB2, div: 0xCDB882, par: 0xD5C290, win: 0x38506A },  // warm cream
-  { body: 0xD4A85A, div: 0xAA7E32, par: 0xBE9445, win: 0x38506A },  // sandy ochre
-  { body: 0x7A9868, div: 0x5A7848, par: 0x698858, win: 0x283A30 },  // sage green
-  { body: 0xC07050, div: 0x9A5030, par: 0xAE6040, win: 0x3A2840 },  // terracotta
+  { body: 0xEBDCB2, div: 0xC8B888, par: 0xD5C290, win: 0x2A3848 },  // warm cream
+  { body: 0xD4C391, div: 0xAA9060, par: 0xBEA870, win: 0x2A3848 },  // sandy ochre
+  { body: 0xC2A878, div: 0x9A8050, par: 0xB09060, win: 0x283040 },  // warm caramel
+  { body: 0x7A9868, div: 0x5A7848, par: 0x698858, win: 0x283030 },  // sage green
 ] as const;
 
 const P = {
-  res_roof:    0xB02E18,
-  hvac:        0xAAAAAA,
+  hvac:        0xA8A8A0,
   solar:       0x2A3858,
-  com_body:    0xE8C870,
-  com_glass:   0x1E3040,
-  com_awningR: 0xAA1C10,
-  com_awningG: 0x2A5A2A,
-  com_parapet: 0x3A6EA8,
-  // public sub-categories
-  edu_body:    0xE8904A,
-  edu_div:     0xC06830,
-  edu_par:     0xD07840,
-  edu_win:     0x2A3858,
-  edu_play:    0x4A9A50,
-  edu_equip:   0xCC6633,
-  sec_body:    0x1E3A5F,
-  sec_div:     0x142840,
-  sec_par:     0x1A3050,
-  sec_win:     0x405870,
-  sec_stripe:  0xD8C830,
-  gov_body:    0xF0ECD8,
-  gov_div:     0xD0C8A8,
-  gov_par:     0xE0D4B8,
-  gov_win:     0x38506A,
-  gov_col:     0xE8E0CC,
-  gov_dome:    0xF8F0E0,
+  // commercial — muted mustard / warm brick
+  com_body:    0xD89F5C,
+  com_glass:   0x1A2830,
+  com_awningR: 0xB56C56,
+  com_awningG: 0x6B7B50,
+  com_parapet: 0x8C9A69,
+  com_divider: 0xB88040,
+  com_glazing: 0x7AACCC,
+  // public institutions — muted sage / olive
+  edu_body:    0x8C9A69,
+  edu_div:     0x6B7B50,
+  edu_par:     0x7D8E5A,
+  edu_win:     0x243028,
+  edu_play:    0x4A7A50,
+  edu_equip:   0xAA8844,
+  sec_body:    0x6B7B50,
+  sec_div:     0x4A5A38,
+  sec_par:     0x5A6A45,
+  sec_win:     0x303828,
+  sec_stripe:  0xE8D840,
+  gov_body:    0x9AAA78,
+  gov_div:     0x788858,
+  gov_par:     0x889868,
+  gov_win:     0x2A3A2A,
+  gov_col:     0xBECE9E,
+  gov_dome:    0xCEDEAE,
+  // employment
   emp_body:    0x7A6EA8,
   emp_div:     0x5A4E88,
   emp_win:     0x25354C,
-  road_asp:    0x646464,
-  road_dash:   0xCABC38,
-  sidewalk:    0xC8C0A8,
-  curb:        0xA89880,
-  sw_green:    0x2E7035,
+  // roads & environment
+  road_asp:    0x3B3B3B,
+  road_dash:   0xF0ECE0,
+  sidewalk:    0x8D918D,
+  curb:        0x72767A,
+  sw_green:    0x4A6B3A,
   trunk:       0x6B4A2A,
-  greens:      [0x2D7A35, 0x35883C, 0x2A6E30, 0x3D8540, 0x317838] as const,
+  greens:      [0x4A6B3A, 0x688E4E, 0x3D5C30, 0x5A7A40, 0x496238] as const,
 };
 
 // ─── Geometry primitives ──────────────────────────────────────────────────────
@@ -112,8 +116,8 @@ function cyl(rt: number, rb: number, h: number, segs: number, hex: number,
 
 function windowRow(cy: number, bw: number, wW: number, wH: number,
                    hex: number): THREE.BufferGeometry[] {
-  const hw = bw / 2 + 0.005;
-  const wd = 0.018;
+  const hw = bw / 2 + 0.002;  // near-flush — looks inset rather than protruding
+  const wd = 0.010;
   const out: THREE.BufferGeometry[] = [];
   for (const wx of [-bw * 0.25, bw * 0.25]) {
     out.push(box(wW, wH, wd, hex,   wx, cy, -hw));
@@ -186,9 +190,6 @@ function buildResGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
   parapetRim(BW, h, fl.par).forEach(g => parts.push(g));
   roofProps(h, flavor).forEach(g => parts.push(g));
 
-  const rh = BW * 0.38;
-  parts.push(cone(BW*0.707, rh, 4, P.res_roof, 0, h+rh/2, 0, Math.PI/4));
-
   return mergeGeometries(parts, false)!;
 }
 
@@ -199,31 +200,34 @@ function buildComGeo(): THREE.BufferGeometry {
 
   parts.push(box(BW, h, BW, P.com_body, 0, h/2, 0));
 
-  // Storefront glass on all 4 faces (ground floor)
-  const gfH = FH * 0.78;
-  const hw  = BW/2 + 0.008;
+  // Ground-floor storefront glazing — tall dark glass panels
+  const gfH = FH * 0.82;
+  const hw  = BW/2 + 0.006;
   for (const s of [-1, 1]) {
-    parts.push(box(BW*0.74, gfH, 0.012, P.com_glass,     0, gfH*0.52, s*hw));
-    parts.push(box(0.012,   gfH, BW*0.74, P.com_glass, s*hw, gfH*0.52, 0));
-  }
-  // Door cutout suggestion (lighter panel)
-  parts.push(box(BW*0.22, gfH*0.78, 0.014, 0x1A2C3C, 0, gfH*0.45, hw));
-
-  // Awning + support poles (south face)
-  parts.push(box(BW*0.86, 0.055, BW*0.17, P.com_awningR, 0, FH+0.028, BW/2+0.085));
-  for (const ax of [-BW*0.28, BW*0.28]) {
-    parts.push(cyl(0.018, 0.018, FH*0.78, 5, 0x888888, ax, FH*0.39, BW/2+0.085));
+    parts.push(box(BW*0.78, gfH, 0.009, P.com_glass,    0, gfH*0.52, s*hw));
+    parts.push(box(0.009, gfH, BW*0.78, P.com_glass, s*hw, gfH*0.52, 0));
   }
 
-  // Floor dividers + glass strips on upper floors
-  const sH = FH*0.46, shw = BW/2 + 0.006;
+  // Angled awning canopy over front face — tilted 18° outward
+  const awnGeo = new THREE.BoxGeometry(BW*0.88, 0.04, BW*0.22);
+  awnGeo.rotateX(-0.32);
+  paint(awnGeo, P.com_awningR);
+  awnGeo.translate(0, FH + 0.07, BW/2 + 0.09);
+  parts.push(awnGeo);
+  // Awning support poles
+  for (const ax of [-BW*0.30, BW*0.30]) {
+    parts.push(cyl(0.015, 0.015, FH*0.75, 4, P.hvac, ax, FH*0.38, BW/2 + 0.085));
+  }
+
+  // Upper floors — warm divider bands + narrow glazing strips
+  const sH = FH*0.48, shw = BW/2 + 0.005;
   for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, 0x3A7EC0, 0, f*FH, 0));
+    parts.push(box(BW+0.01, 0.022, BW+0.01, P.com_divider, 0, f*FH, 0));
     const yc = f*FH + FH*0.55;
-    parts.push(box(BW-0.04, sH, 0.008, 0x8BBFE0,    0, yc, -shw));
-    parts.push(box(BW-0.04, sH, 0.008, 0x8BBFE0,    0, yc,  shw));
-    parts.push(box(0.008, sH, BW-0.04, 0x8BBFE0, -shw, yc,    0));
-    parts.push(box(0.008, sH, BW-0.04, 0x8BBFE0,  shw, yc,    0));
+    parts.push(box(BW-0.06, sH, 0.007, P.com_glazing,    0, yc, -shw));
+    parts.push(box(BW-0.06, sH, 0.007, P.com_glazing,    0, yc,  shw));
+    parts.push(box(0.007, sH, BW-0.06, P.com_glazing, -shw, yc,    0));
+    parts.push(box(0.007, sH, BW-0.06, P.com_glazing,  shw, yc,    0));
   }
 
   parapetRim(BW, h, P.com_parapet).forEach(g => parts.push(g));
@@ -248,7 +252,11 @@ function buildMixedGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
     parts.push(box(BW*0.74, comH*0.85, 0.012, P.com_glass,     0, comH*0.5, s*hw));
     parts.push(box(0.012, comH*0.85, BW*0.74, P.com_glass, s*hw, comH*0.5, 0));
   }
-  parts.push(box(BW*0.86, 0.05, BW*0.16, P.com_awningG, 0, comH+0.025, BW/2+0.08));
+  const mixAwn = new THREE.BoxGeometry(BW*0.86, 0.035, BW*0.18);
+  mixAwn.rotateX(-0.32);
+  paint(mixAwn, P.com_awningG);
+  mixAwn.translate(0, comH + 0.04, BW/2 + 0.08);
+  parts.push(mixAwn);
 
   // Residential tower (set back)
   parts.push(box(topW, resH, topW, fl.body, 0, comH+resH/2, 0));
@@ -263,8 +271,6 @@ function buildMixedGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
   const totalH = comH + resH;
   parapetRim(topW, totalH, fl.par).forEach(g => parts.push(g));
   roofProps(totalH, flavor).forEach(g => parts.push(g));
-  const rh = topW * 0.38;
-  parts.push(cone(topW*0.707, rh, 4, P.res_roof, 0, totalH+rh/2, 0, Math.PI/4));
 
   return mergeGeometries(parts, false)!;
 }
@@ -464,19 +470,38 @@ function buildRoadGeo(dir: RoadDir): THREE.BufferGeometry {
   return mergeGeometries(parts, false)!;
 }
 
-// ─── Landscape trees ─────────────────────────────────────────────────────────
+// ─── Landscape trees — mixed leafy (dodecahedron) and pine (stacked cones) ────
 
 function buildTreeGeo(variant: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const trunkH = 0.16;
   parts.push(cyl(0.04, 0.06, trunkH, 5, P.trunk, 0, trunkH/2, 0));
-  const green = P.greens[variant % P.greens.length];
-  for (const [r, h, yOff] of [
-    [0.30, 0.32, 0.00] as const,
-    [0.22, 0.27, 0.18] as const,
-    [0.13, 0.22, 0.32] as const,
-  ]) {
-    parts.push(cone(r, h, 7, green, 0, trunkH+yOff+h/2, 0));
+
+  const green  = P.greens[variant % P.greens.length];
+  const green2 = P.greens[(variant + 2) % P.greens.length];
+
+  if (variant % 2 === 0) {
+    // Leafy rounded tree — low-poly sphere canopy (indexed, merges cleanly)
+    const main = new THREE.SphereGeometry(0.26, 7, 5);
+    main.scale(1.05, 0.86, 1.05);
+    paint(main, green);
+    main.translate(0, trunkH + 0.21, 0);
+    parts.push(main);
+
+    const sub = new THREE.SphereGeometry(0.17, 6, 4);
+    sub.scale(0.90, 0.78, 0.90);
+    paint(sub, green2);
+    sub.translate(0.12, trunkH + 0.36, -0.07);
+    parts.push(sub);
+  } else {
+    // Pine tree — 3 stacked cones, organic green variation per tier
+    for (const [r, h, yOff, gIdx] of [
+      [0.30, 0.34, 0.00, 0],
+      [0.22, 0.28, 0.19, 2],
+      [0.13, 0.22, 0.34, 4],
+    ] as const) {
+      parts.push(cone(r, h, 7, P.greens[gIdx % P.greens.length], 0, trunkH + yOff + h/2, 0));
+    }
   }
   return mergeGeometries(parts, false)!;
 }
