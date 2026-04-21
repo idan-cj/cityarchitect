@@ -42,9 +42,24 @@ const P = {
   com_awningR: 0xAA1C10,
   com_awningG: 0x2A5A2A,
   com_parapet: 0x3A6EA8,
-  pub_body:    0x5AAA5C,
-  pub_step:    0x499A4B,
-  pub_top:     0x60BC62,
+  // public sub-categories
+  edu_body:    0xE8904A,
+  edu_div:     0xC06830,
+  edu_par:     0xD07840,
+  edu_win:     0x2A3858,
+  edu_play:    0x4A9A50,
+  edu_equip:   0xCC6633,
+  sec_body:    0x1E3A5F,
+  sec_div:     0x142840,
+  sec_par:     0x1A3050,
+  sec_win:     0x405870,
+  sec_stripe:  0xD8C830,
+  gov_body:    0xF0ECD8,
+  gov_div:     0xD0C8A8,
+  gov_par:     0xE0D4B8,
+  gov_win:     0x38506A,
+  gov_col:     0xE8E0CC,
+  gov_dome:    0xF8F0E0,
   emp_body:    0x7A6EA8,
   emp_div:     0x5A4E88,
   emp_win:     0x25354C,
@@ -254,21 +269,98 @@ function buildMixedGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
   return mergeGeometries(parts, false)!;
 }
 
-function buildPubGeo(): THREE.BufferGeometry {
+// ── Education: low warm-orange building with a rooftop play area ──────────────
+function buildPubEducationGeo(): THREE.BufferGeometry {
+  const h      = 1.6;
+  const floors = Math.floor(h / FH);
+  const parts: THREE.BufferGeometry[] = [];
+
+  parts.push(box(BW, h, BW, P.edu_body, 0, h/2, 0));
+  for (let f = 1; f < floors; f++) {
+    parts.push(box(BW+0.01, 0.022, BW+0.01, P.edu_div, 0, f*FH, 0));
+  }
+  const wW = BW*0.20, wH = FH*0.46;
+  for (let f = 0; f < floors; f++) {
+    windowRow(f*FH + FH*0.55, BW, wW, wH, P.edu_win).forEach(g => parts.push(g));
+  }
+  parapetRim(BW, h, P.edu_par).forEach(g => parts.push(g));
+
+  // Rooftop play area — green turf + climbing frame
+  parts.push(box(BW*0.58, 0.05, BW*0.58, P.edu_play, 0, h+0.025, 0));
+  // Climbing frame: two vertical poles + horizontal bar
+  for (const px of [-BW*0.16, BW*0.16]) {
+    parts.push(cyl(0.022, 0.022, 0.30, 4, P.edu_equip, px, h+0.05+0.15, 0));
+  }
+  parts.push(box(BW*0.38, 0.025, 0.025, P.edu_equip, 0, h+0.05+0.30, 0));
+  // Flagpole
+  parts.push(cyl(0.012, 0.012, 0.40, 4, P.hvac, BW*0.30, h+0.05+0.20, BW*0.28));
+  parts.push(box(0.14, 0.055, 0.008, P.edu_equip, BW*0.30+0.07, h+0.05+0.36, BW*0.28));
+
+  return mergeGeometries(parts, false)!;
+}
+
+// ── Security: tall navy block with radio mast and warning stripe ──────────────
+function buildPubSecurityGeo(): THREE.BufferGeometry {
+  const h      = 2.8;
+  const floors = Math.floor(h / FH);
+  const parts: THREE.BufferGeometry[] = [];
+
+  parts.push(box(BW, h, BW, P.sec_body, 0, h/2, 0));
+  for (let f = 1; f < floors; f++) {
+    parts.push(box(BW+0.01, 0.022, BW+0.01, P.sec_div, 0, f*FH, 0));
+  }
+  const wW = BW*0.14, wH = FH*0.38;
+  for (let f = 0; f < floors; f++) {
+    windowRow(f*FH + FH*0.55, BW, wW, wH, P.sec_win).forEach(g => parts.push(g));
+  }
+  parapetRim(BW, h, P.sec_par).forEach(g => parts.push(g));
+
+  // Warning stripe at base (yellow band across front face)
+  const hw = BW/2 + 0.005;
+  parts.push(box(BW*0.82, FH*0.16, 0.012, P.sec_stripe,  0, FH*0.12, hw));
+  parts.push(box(BW*0.82, FH*0.16, 0.012, P.sec_stripe,  0, FH*0.12, -hw));
+
+  // Radio mast: main shaft + 3 tapered crossbars
+  const mastH = 1.1;
+  parts.push(cyl(0.020, 0.020, mastH, 4, P.hvac, 0, h + mastH/2, 0));
+  for (const [yFrac, len] of [[0.55, 0.30], [0.72, 0.22], [0.88, 0.14]] as const) {
+    parts.push(box(len, 0.020, 0.020, P.hvac, 0, h + mastH * yFrac, 0));
+  }
+
+  return mergeGeometries(parts, false)!;
+}
+
+// ── Government: cream classical block with columns and central cupola ─────────
+function buildPubGovernmentGeo(): THREE.BufferGeometry {
   const h      = 3.0;
   const floors = Math.floor(h / FH);
   const parts: THREE.BufferGeometry[] = [];
 
-  parts.push(box(BW, h, BW, P.pub_body, 0, h/2, 0));
+  parts.push(box(BW, h, BW, P.gov_body, 0, h/2, 0));
   for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.pub_step, 0, f*FH, 0));
+    parts.push(box(BW+0.01, 0.022, BW+0.01, P.gov_div, 0, f*FH, 0));
   }
-  const wW = BW*0.17, wH = FH*0.42;
+  const wW = BW*0.15, wH = FH*0.42;
   for (let f = 0; f < floors; f++) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, 0x283A30).forEach(g => parts.push(g));
+    windowRow(f*FH + FH*0.55, BW, wW, wH, P.gov_win).forEach(g => parts.push(g));
   }
-  parts.push(box(BW*0.78, 0.26, BW*0.78, P.pub_step, 0, h+0.13, 0));
-  parts.push(box(BW*0.46, 0.20, BW*0.46, P.pub_top,  0, h+0.26+0.10, 0));
+  parapetRim(BW, h, P.gov_par).forEach(g => parts.push(g));
+
+  // Entrance columns across front face (5 thin pillars)
+  const frontZ = BW/2 + 0.025;
+  const colH   = h * 0.80;
+  for (const cx of [-BW*0.34, -BW*0.17, 0, BW*0.17, BW*0.34]) {
+    parts.push(cyl(0.038, 0.042, colH, 8, P.gov_col, cx, colH/2, frontZ));
+  }
+  // Triangular pediment lintel above columns
+  parts.push(box(BW*0.86, 0.055, 0.055, P.gov_div,  0, colH + 0.028, frontZ));
+  // Wide entrance steps
+  parts.push(box(BW*0.74, 0.055, BW*0.16, P.gov_div, 0, 0.028, frontZ + BW*0.06));
+
+  // Central dome (three stacked cylinders tapering upward)
+  parts.push(cyl(BW*0.24, BW*0.28, 0.28, 8, P.gov_col,  0, h + 0.14, 0));
+  parts.push(cyl(BW*0.14, BW*0.24, 0.22, 8, P.gov_dome, 0, h + 0.28 + 0.11, 0));
+  parts.push(cone(BW*0.07, 0.24, 8, P.gov_div,           0, h + 0.28 + 0.22 + 0.12, 0));
 
   return mergeGeometries(parts, false)!;
 }
@@ -405,11 +497,13 @@ function roadDirection(cell: Cell, cells: CellMap): RoadDir {
 // ─── Hover colours ────────────────────────────────────────────────────────────
 
 const HOVER_COLOR: Partial<Record<ToolType, number>> = {
-  road:        0x9A9A9A,
-  residential: 0xF5D862,
-  commercial:  0x6AAAE0,
-  public:      0x70C872,
-  demolish:    0xFF6666,
+  road:             0x9A9A9A,
+  residential:      0xF5D862,
+  commercial:       0x6AAAE0,
+  public_education: 0xF0A860,
+  public_security:  0x3060A0,
+  public_government:0xD8D0B0,
+  demolish:         0xFF6666,
 };
 
 // ─── BuildingManager ──────────────────────────────────────────────────────────
@@ -464,9 +558,11 @@ export class BuildingManager {
       for (let u = 0; u <= 5; u++) reg(`mix_${f}_${u}`, buildMixedGeo(u, f));
     }
 
-    reg('commercial',  buildComGeo());
-    reg('public',      buildPubGeo());
-    reg('employment',  buildEmpGeo());
+    reg('commercial',       buildComGeo());
+    reg('public_education', buildPubEducationGeo());
+    reg('public_security',  buildPubSecurityGeo());
+    reg('public_government',buildPubGovernmentGeo());
+    reg('employment',       buildEmpGeo());
     reg('emp_overlay', buildEmpOverlayGeo());
 
     for (const dir of ROAD_DIRS) reg(`road_${dir}`, buildRoadGeo(dir));
@@ -527,8 +623,16 @@ export class BuildingManager {
           key = `mix_${flavor}_${upg}`;
           top = FH + 1.6 * Math.pow(2, upg);
           break;
-        case 'public':
-          key = 'public';
+        case 'public_education':
+          key = 'public_education';
+          top = 1.6;
+          break;
+        case 'public_security':
+          key = 'public_security';
+          top = 2.8;
+          break;
+        case 'public_government':
+          key = 'public_government';
           top = 3.0;
           break;
         case 'employment':

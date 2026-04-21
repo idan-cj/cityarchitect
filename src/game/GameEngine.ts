@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GridRenderer, buildCellMap } from './Grid';
 import { BuildingManager } from './Buildings';
 import { AgentManager } from './Agents';
@@ -21,6 +26,7 @@ export class GameEngine {
   private raycaster:       THREE.Raycaster;
   private pointer:         THREE.Vector2;
   private canvas:          HTMLCanvasElement;
+  private composer:        EffectComposer;
   private animationId:     number  = 0;
   private tickInterval:    ReturnType<typeof setInterval>;
 
@@ -38,10 +44,10 @@ export class GameEngine {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    this.renderer.shadowMap.enabled  = true;
-    this.renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping        = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled   = true;
+    this.renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure  = 1.10;
 
     // ── Scene ────────────────────────────────────────────────────────────────
     this.scene            = new THREE.Scene();
@@ -80,6 +86,9 @@ export class GameEngine {
     this.buildingManager.rebuildAll(cells); // initial trees + any pre-placed zones
     this.buildHorizon();
 
+    // ── Post-processing ───────────────────────────────────────────────────────
+    this.composer = this.buildComposer(canvas.clientWidth, canvas.clientHeight);
+
     // ── Events ───────────────────────────────────────────────────────────────
     window.addEventListener('resize', this.onResize);
     canvas.addEventListener('mousedown', this.onMouseDown);
@@ -93,17 +102,17 @@ export class GameEngine {
   }
 
   private setupLighting(): void {
-    // Generous ambient — handcrafted diorama feel, no dark crevices
-    this.scene.add(new THREE.AmbientLight(0xFFF8F0, 0.60));
+    // Warm ambient — removes pitch-black crevices
+    this.scene.add(new THREE.AmbientLight(0xFFECD0, 0.55));
 
-    // Warm sky, earthy ground bounce
-    const hemi = new THREE.HemisphereLight(0xC8E0FF, 0xA89060, 0.70);
+    // Golden-hour hemisphere: warm sky above, ochre ground bounce below
+    const hemi = new THREE.HemisphereLight(0xFFD090, 0x906040, 0.60);
     hemi.position.set(0, 50, 0);
     this.scene.add(hemi);
 
-    // Soft warm sun — slight overcast angle keeps shadows gentle
-    const sun = new THREE.DirectionalLight(0xFFF2D0, 0.95);
-    sun.position.set(40, 55, 25);
+    // Low-angle golden sun — casts long, warm shadows across buildings
+    const sun = new THREE.DirectionalLight(0xFFD060, 1.0);
+    sun.position.set(60, 35, 20);
     sun.castShadow           = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near   = 1;
@@ -115,10 +124,34 @@ export class GameEngine {
     sun.shadow.bias          = -0.0003;
     this.scene.add(sun);
 
-    // Cool blue fill — lifts shadow darkness on the opposite face
-    const fill = new THREE.DirectionalLight(0xC0D8FF, 0.38);
-    fill.position.set(-30, 18, -20);
+    // Cool blue-sky fill — counters the warm sun on shadowed faces
+    const fill = new THREE.DirectionalLight(0xA0C8FF, 0.30);
+    fill.position.set(-25, 20, -25);
     this.scene.add(fill);
+  }
+
+  private buildComposer(w: number, h: number): EffectComposer {
+    const composer = new EffectComposer(this.renderer);
+    composer.addPass(new RenderPass(this.scene, this.camera));
+
+    // SSAO — soft contact shadows where buildings meet ground and each other
+    const ssao         = new SSAOPass(this.scene, this.camera, w, h);
+    ssao.kernelRadius  = 0.55;   // hemisphere radius in world units
+    ssao.minDistance   = 0.002;
+    ssao.maxDistance   = 0.07;
+    (ssao as unknown as { kernelSize: number }).kernelSize = 16; // lighter sample count
+    composer.addPass(ssao);
+
+    // Depth of Field — slight foreground/background blur for toy-box miniature look
+    const bokeh = new BokehPass(this.scene, this.camera, {
+      focus:    0.52,    // normalised depth ≈ city mid-distance
+      aperture: 0.00004,
+      maxblur:  0.004,
+    });
+    composer.addPass(bokeh);
+
+    composer.addPass(new OutputPass());
+    return composer;
   }
 
   // Distant city silhouette on all four horizons
@@ -177,6 +210,7 @@ export class GameEngine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
   };
 
   private onMouseDown = (e: MouseEvent): void => {
@@ -251,7 +285,7 @@ export class GameEngine {
     this.controls.update();
     this.buildingManager.update(delta);
     this.agentManager.update(useGameStore.getState().cells, delta);
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   };
 
   dispose(): void {
@@ -264,6 +298,7 @@ export class GameEngine {
     this.agentManager.dispose();
     this.buildingManager.dispose();
     this.controls.dispose();
+    this.composer.dispose();
     this.renderer.dispose();
   }
 }

@@ -109,3 +109,88 @@
   color: #FF7070;
   background: rgba(255, 60, 60, 0.18);
 }
+
+/* ── Public group & submenu ──────────────────────────────────────────────── */
+
+.tool-group {
+  position: relative;
+}
+
+.tool-chevron {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 6px;
+  color: #BBBBBB;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.pub-submenu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 13px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 148px;
+  pointer-events: all;
+  z-index: 30;
+}
+
+.pub-sub-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.pub-sub-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.pub-sub-btn.is-active {
+  background: rgba(0, 85, 238, 0.07);
+}
+
+.pub-sub-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: block;
+  flex-shrink: 0;
+  transition: box-shadow 0.15s ease;
+}
+
+.pub-sub-label {
+  flex: 1;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #1a1a1a;
+  letter-spacing: 0.03em;
+}
+
+.pub-sub-cost {
+  font-size: 9px;
+  font-weight: 700;
+  color: #AAAAAA;
+  letter-spacing: 0.03em;
+}

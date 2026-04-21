@@ -17,12 +17,14 @@ function detectMilestones(
 
   // ── First-zone milestones ────────────────────────────────────────────────
   const zoneChecks: [string, ZoneType, string][] = [
-    ['first_road',        'road',        '1st Road'],
-    ['first_residential', 'residential', '1st Residential'],
-    ['first_commercial',  'commercial',  '1st Commercial'],
-    ['first_public',      'public',      '1st Institution'],
-    ['first_mixed',       'mixed',       'Mixed-Use Built'],
-    ['first_employment',  'employment',  '1st Employment'],
+    ['first_road',        'road',             '1st Road'],
+    ['first_residential', 'residential',      '1st Residential'],
+    ['first_commercial',  'commercial',       '1st Commercial'],
+    ['first_education',   'public_education', '1st School'],
+    ['first_security',    'public_security',  '1st Police Stn'],
+    ['first_government',  'public_government','1st City Hall'],
+    ['first_mixed',       'mixed',            'Mixed-Use Built'],
+    ['first_employment',  'employment',       '1st Employment'],
   ];
   const cellArr = [...cells.values()];
   zoneChecks.forEach(([id, zone, label]) => {
@@ -196,7 +198,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     cells.forEach((cell) => {
       if (cell.zone === 'residential' || cell.zone === 'mixed') population     += 100 * Math.pow(2, cell.upgrades);
       if (cell.zone === 'commercial'  || cell.zone === 'mixed') commercialCount++;
-      if (cell.zone === 'public')                               publicCount++;
+      if (cell.zone === 'public_security' || cell.zone === 'public_education' || cell.zone === 'public_government') publicCount++;
       if (cell.zone === 'road')                                 roadCount++;
       if (cell.employment || cell.zone === 'employment')         employmentCount++;
     });
