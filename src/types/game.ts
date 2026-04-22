@@ -56,7 +56,7 @@ export const ZONE_COSTS: Partial<Record<ToolType, number>> = {
   demolish:         25,
 };
 
-export const GRID_SIZE = 32;
+export const GRID_SIZE = 200;
 export const CELL_SIZE = 2; // Three.js world units per cell
 
 export type MilestoneType = 'start' | 'zone' | 'population' | 'health' | 'phase';

@@ -12,7 +12,7 @@ import { AgentManager } from './Agents';
 import { useGameStore, cellKey } from '../store/gameStore';
 import { GRID_SIZE, CELL_SIZE } from '../types/game';
 
-const CENTER = (GRID_SIZE * CELL_SIZE) / 2;
+const CENTER = (GRID_SIZE * CELL_SIZE) / 2; // world-space centre of the map
 
 export class GameEngine {
   private renderer:        THREE.WebGLRenderer;
@@ -30,9 +30,14 @@ export class GameEngine {
   private animationId:     number  = 0;
   private tickInterval:    ReturnType<typeof setInterval>;
 
-  // Drag-detection: prevent zone placement after orbiting
-  private mouseDownPos = { x: 0, y: 0 };
-  private isDragging   = false;
+  // ── Paint-drag state ───────────────────────────────────────────────────────
+  // isMouseDown tracks left-button held; lastPaintKey prevents re-painting the
+  // same cell while dragging; pendingRebuild batches all paint calls in a frame
+  // into a single rebuildAll so the game doesn't stall during rapid painting.
+  private isMouseDown    = false;
+  private isInitialPaint = false; // true only on the first cell of a new drag
+  private lastPaintKey   = '';
+  private pendingRebuild = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas    = canvas;
@@ -44,32 +49,46 @@ export class GameEngine {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    this.renderer.shadowMap.enabled   = true;
-    this.renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping         = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure  = 1.10;
+    this.renderer.shadowMap.enabled  = true;
+    this.renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.10;
 
     // ── Scene ────────────────────────────────────────────────────────────────
     this.scene            = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog        = new THREE.Fog(0x87CEEB, 85, 150);
+    // Fog start/end scales with map size so distant terrain fades naturally.
+    const fogNear = GRID_SIZE * CELL_SIZE * 0.55;
+    const fogFar  = GRID_SIZE * CELL_SIZE * 2.8;
+    this.scene.fog = new THREE.Fog(0x87CEEB, fogNear, fogFar);
 
     // ── Camera ───────────────────────────────────────────────────────────────
-    const aspect    = canvas.clientWidth / canvas.clientHeight;
-    this.camera     = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
-    this.camera.position.set(CENTER + 26, 38, CENTER + 32);
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    // Far plane must cover the full diagonal of the map plus camera height.
+    const mapDiag = Math.sqrt(2) * GRID_SIZE * CELL_SIZE;
+    this.camera   = new THREE.PerspectiveCamera(45, aspect, 0.1, mapDiag * 3);
+    // Start with a wide overview of the new large map.
+    this.camera.position.set(CENTER + 60, 180, CENTER + 220);
     this.camera.lookAt(CENTER, 0, CENTER);
 
     // ── OrbitControls ────────────────────────────────────────────────────────
-    this.controls                 = new OrbitControls(this.camera, canvas);
+    this.controls               = new OrbitControls(this.camera, canvas);
     this.controls.target.set(CENTER, 0, CENTER);
-    this.controls.enableDamping   = true;
-    this.controls.dampingFactor   = 0.07;
-    this.controls.maxPolarAngle   = Math.PI / 2.15; // Never below horizon
-    this.controls.minDistance     = 6;
-    this.controls.maxDistance     = 95;
-    this.controls.panSpeed        = 0.9;
-    this.controls.zoomSpeed       = 1.2;
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.07;
+    this.controls.maxPolarAngle = Math.PI / 2.15;
+    this.controls.minDistance   = 8;
+    // Allow zooming out far enough to see the whole 400-unit map.
+    this.controls.maxDistance   = GRID_SIZE * CELL_SIZE * 2.2;
+    this.controls.panSpeed      = 1.2;
+    this.controls.zoomSpeed     = 1.2;
+    // Left-click is reserved for zone painting; camera is controlled with
+    // right-drag (pan) and middle-drag (rotate), scroll to zoom.
+    this.controls.mouseButtons  = {
+      LEFT:   undefined,              // reserved for zone painting
+      MIDDLE: THREE.MOUSE.DOLLY,      // middle-drag: zoom
+      RIGHT:  THREE.MOUSE.ROTATE,     // right-drag: orbit
+    };
     this.controls.update();
 
     // ── Lighting ─────────────────────────────────────────────────────────────
@@ -83,17 +102,17 @@ export class GameEngine {
     const cells = buildCellMap();
     useGameStore.getState().initCells(cells);
     this.gridRenderer.buildTerrain(cells);
-    this.buildingManager.rebuildAll(cells); // initial trees + any pre-placed zones
+    this.buildingManager.rebuildAll(cells);
     this.buildHorizon();
 
     // ── Post-processing ───────────────────────────────────────────────────────
     this.composer = this.buildComposer(canvas.clientWidth, canvas.clientHeight);
 
     // ── Events ───────────────────────────────────────────────────────────────
-    window.addEventListener('resize', this.onResize);
+    window.addEventListener('resize',   this.onResize);
     canvas.addEventListener('mousedown', this.onMouseDown);
     canvas.addEventListener('mousemove', this.onMouseMove);
-    canvas.addEventListener('click',     this.onClick);
+    canvas.addEventListener('mouseup',   this.onMouseUp);
 
     // ── Game tick (every 3 s) ─────────────────────────────────────────────────
     this.tickInterval = setInterval(() => useGameStore.getState().tick(), 3000);
@@ -110,18 +129,25 @@ export class GameEngine {
     hemi.position.set(0, 50, 0);
     this.scene.add(hemi);
 
-    // Warm afternoon sun — slightly elevated, long soft shadows
+    // Warm afternoon sun — slightly elevated, long soft shadows.
+    // Position is relative to map centre so shadows cover the whole map.
     const sun = new THREE.DirectionalLight(0xFFF0C8, 0.90);
-    sun.position.set(50, 45, 25);
-    sun.castShadow           = true;
+    sun.position.set(CENTER + 50, 45, CENTER + 25);
+    sun.castShadow            = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.near   = 1;
-    sun.shadow.camera.far    = 180;
-    sun.shadow.camera.left   = -70;
-    sun.shadow.camera.right  =  70;
-    sun.shadow.camera.top    =  70;
-    sun.shadow.camera.bottom = -70;
-    sun.shadow.bias          = -0.0003;
+    // Shadow frustum must encompass the full 400×400-unit map.
+    const half                = GRID_SIZE * CELL_SIZE * 0.65; // generous margin
+    sun.shadow.camera.left    = -half;
+    sun.shadow.camera.right   =  half;
+    sun.shadow.camera.top     =  half;
+    sun.shadow.camera.bottom  = -half;
+    sun.shadow.camera.near    = 1;
+    // Far must reach across the map from the elevated sun position.
+    sun.shadow.camera.far     = GRID_SIZE * CELL_SIZE * 4;
+    sun.shadow.bias           = -0.0003;
+    // Point the sun at the map centre.
+    sun.target.position.set(CENTER, 0, CENTER);
+    this.scene.add(sun.target);
     this.scene.add(sun);
 
     // Soft blue-grey fill from opposite side — lifts shadowed faces gently
@@ -134,19 +160,20 @@ export class GameEngine {
     const composer = new EffectComposer(this.renderer);
     composer.addPass(new RenderPass(this.scene, this.camera));
 
-    // SSAO — soft contact shadows where buildings meet ground and each other
-    const ssao         = new SSAOPass(this.scene, this.camera, w, h);
-    ssao.kernelRadius  = 0.55;   // hemisphere radius in world units
-    ssao.minDistance   = 0.002;
-    ssao.maxDistance   = 0.07;
-    (ssao as unknown as { kernelSize: number }).kernelSize = 16; // lighter sample count
+    // SSAO — soft contact shadows where buildings meet ground
+    const ssao        = new SSAOPass(this.scene, this.camera, w, h);
+    ssao.kernelRadius = 0.55;
+    ssao.minDistance  = 0.002;
+    ssao.maxDistance  = 0.07;
+    (ssao as unknown as { kernelSize: number }).kernelSize = 16;
     composer.addPass(ssao);
 
-    // Depth of Field — slight foreground/background blur for toy-box miniature look
+    // Depth-of-field — miniature toy-box feel.
+    // Focus normalised depth recalculated for the new far plane.
     const bokeh = new BokehPass(this.scene, this.camera, {
-      focus:    0.52,    // normalised depth ≈ city mid-distance
+      focus:    0.08,    // focal plane at roughly 200 world units
       aperture: 0.00004,
-      maxblur:  0.004,
+      maxblur:  0.002,   // reduced blur for the large map
     });
     composer.addPass(bokeh);
 
@@ -160,6 +187,9 @@ export class GameEngine {
       const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
       return n - Math.floor(n);
     };
+
+    // Strip width scales with map so the horizon fills the view.
+    const W = GRID_SIZE * CELL_SIZE * 3.5;
 
     const buildStrip = (stripW: number, seed: number): THREE.BufferGeometry => {
       const parts: THREE.BufferGeometry[] = [];
@@ -182,9 +212,8 @@ export class GameEngine {
       return mergeGeometries(parts, false)!;
     };
 
-    const mat  = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0 });
-    const D    = GRID_SIZE * CELL_SIZE * 0.72; // distance from city centre
-    const W    = 180;
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0 });
+    const D   = GRID_SIZE * CELL_SIZE * 0.72; // distance from map centre
 
     const sides: [number, number, number, number][] = [
       [CENTER,     0, CENTER - D,  0          ],
@@ -213,16 +242,23 @@ export class GameEngine {
     this.composer.setSize(w, h);
   };
 
+  // Left-button down: start painting the zone onto the hovered cell.
   private onMouseDown = (e: MouseEvent): void => {
-    this.mouseDownPos = { x: e.clientX, y: e.clientY };
-    this.isDragging   = false;
+    if (e.button !== 0) return; // only left click drives painting
+    const { selectedTool } = useGameStore.getState();
+    if (selectedTool === 'select') return;
+
+    this.isMouseDown    = true;
+    this.isInitialPaint = true;
+    this.lastPaintKey   = '';
+    this.tryPaintCell(e);
   };
 
+  // Mouse move: update hover highlight and continue painting if held.
   private onMouseMove = (e: MouseEvent): void => {
-    const dx = e.clientX - this.mouseDownPos.x;
-    const dy = e.clientY - this.mouseDownPos.y;
-    if (Math.sqrt(dx * dx + dy * dy) > 4) this.isDragging = true;
+    if (this.isMouseDown) this.tryPaintCell(e);
 
+    // Hover highlight (always updated for visual feedback)
     const hit = this.raycastGround(e);
     if (!hit) {
       useGameStore.getState().setHoveredCell(null);
@@ -230,9 +266,9 @@ export class GameEngine {
       return;
     }
 
-    const { x, z }   = this.gridRenderer.worldToCell(hit.point);
+    const { x, z }        = this.gridRenderer.worldToCell(hit.point);
     const { cells, selectedTool } = useGameStore.getState();
-    const cell        = cells.get(cellKey(x, z));
+    const cell             = cells.get(cellKey(x, z));
 
     if (cell && cell.terrain === 'land') {
       useGameStore.getState().setHoveredCell({ x, z });
@@ -243,30 +279,55 @@ export class GameEngine {
     }
   };
 
-  private onClick = (e: MouseEvent): void => {
-    if (this.isDragging) return;
+  // Left-button up: stop painting.
+  private onMouseUp = (e: MouseEvent): void => {
+    if (e.button !== 0) return;
+    this.isMouseDown    = false;
+    this.isInitialPaint = false;
+    this.lastPaintKey   = '';
+  };
 
+  // Core paint helper — places a zone on the cell under the cursor.
+  // Skips cells that haven't changed and cells already painted this drag stroke.
+  private tryPaintCell(e: MouseEvent): void {
     const hit = this.raycastGround(e);
     if (!hit) return;
 
-    const { x, z }   = this.gridRenderer.worldToCell(hit.point);
-    const store       = useGameStore.getState();
-    const prev           = store.cells.get(cellKey(x, z));
-    const prevZone       = prev?.zone;
-    const prevUpgrades   = prev?.upgrades   ?? 0;
-    const prevEmployment = prev?.employment ?? false;
+    const { x, z } = this.gridRenderer.worldToCell(hit.point);
+    const key       = `${x},${z}`;
+    if (key === this.lastPaintKey) return; // same cell as last frame, skip
+
+    const store    = useGameStore.getState();
+    const prevCell = store.cells.get(key);
+    if (!prevCell || prevCell.terrain !== 'land') return;
+
+    const snap = {
+      zone:       prevCell.zone,
+      upgrades:   prevCell.upgrades,
+      employment: prevCell.employment,
+    };
 
     store.placeZone(x, z);
+    this.lastPaintKey = key;
 
-    const updated = useGameStore.getState().cells;
-    const cell    = updated.get(cellKey(x, z));
-
-    // Single rebuildAll handles the changed cell and any affected road directions
-    if (cell && (cell.zone !== prevZone || cell.upgrades !== prevUpgrades || cell.employment !== prevEmployment)) {
-      this.buildingManager.rebuildAll(updated);
-      if (cell.zone !== 'empty') this.buildingManager.spawnPopAnim(x, z);
+    // Check whether anything actually changed before scheduling a rebuild.
+    const newCell = useGameStore.getState().cells.get(key);
+    if (
+      newCell &&
+      (newCell.zone !== snap.zone ||
+       newCell.upgrades !== snap.upgrades ||
+       newCell.employment !== snap.employment)
+    ) {
+      this.pendingRebuild = true;
+      // Pop animation only on the first cell of each drag stroke to avoid
+      // spawning dozens of overlapping animations while painting.
+      if (this.isInitialPaint && newCell.zone !== 'empty') {
+        this.buildingManager.spawnPopAnim(x, z);
+      }
     }
-  };
+
+    this.isInitialPaint = false;
+  }
 
   private raycastGround(e: MouseEvent): THREE.Intersection | null {
     const rect     = this.canvas.getBoundingClientRect();
@@ -280,9 +341,17 @@ export class GameEngine {
   // ── Render loop ───────────────────────────────────────────────────────────
 
   private animate = (): void => {
-    this.animationId   = requestAnimationFrame(this.animate);
-    const delta        = this.clock.getDelta();
+    this.animationId = requestAnimationFrame(this.animate);
+    const delta      = this.clock.getDelta();
+
     this.controls.update();
+
+    // Flush all pending zone paints in one GPU upload per frame, not per cell.
+    if (this.pendingRebuild) {
+      this.pendingRebuild = false;
+      this.buildingManager.rebuildAll(useGameStore.getState().cells);
+    }
+
     this.buildingManager.update(delta);
     this.agentManager.update(useGameStore.getState().cells, delta);
     this.composer.render();
@@ -291,10 +360,10 @@ export class GameEngine {
   dispose(): void {
     cancelAnimationFrame(this.animationId);
     clearInterval(this.tickInterval);
-    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('resize',   this.onResize);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
-    this.canvas.removeEventListener('click',     this.onClick);
+    this.canvas.removeEventListener('mouseup',   this.onMouseUp);
     this.agentManager.dispose();
     this.buildingManager.dispose();
     this.controls.dispose();

@@ -1,20 +1,22 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Cell, ToolType, CELL_SIZE, GRID_SIZE } from '../types/game';
+import { Cell, ToolType, ZoneType, CELL_SIZE, GRID_SIZE, ZONE_COLORS } from '../types/game';
 import { cellKey } from '../store/gameStore';
 
 type CellMap = Map<string, Cell>;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BW  = CELL_SIZE * 0.86;
-const FH  = 1.4 / 4;                   // floor height unit  0.35
-const MAX = GRID_SIZE * GRID_SIZE * 2; // max InstancedMesh slots
+const BW        = CELL_SIZE * 0.86;
+const FH        = 1.4 / 4;          // floor-height unit, used in mixed ghost height
+const MAX       = GRID_SIZE * GRID_SIZE;
 
-// Road cross-section dimensions
-const ASP_W  = CELL_SIZE * 0.56;       // asphalt strip width
-const SW_W   = CELL_SIZE * 0.185;      // sidewalk width each side
-const SW_OFF = ASP_W / 2 + SW_W / 2 + 0.03; // sidewalk centre offset
+const TREE_PROB = Math.min(1.0, (32 * 32 * 2) / (GRID_SIZE * GRID_SIZE * 0.65));
+
+const ASP_W  = CELL_SIZE * 0.56;
+const SW_W   = CELL_SIZE * 0.185;
+const SW_OFF = ASP_W / 2 + SW_W / 2 + 0.03;
 
 // ─── Seeded per-cell RNG ──────────────────────────────────────────────────────
 
@@ -23,57 +25,16 @@ function rng(x: number, z: number, slot: number): number {
   return n - Math.floor(n);
 }
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
-
-// 4 warm stucco/plaster tones — muted, high-roughness diorama palette
-const FLAVORS = [
-  { body: 0xEBDCB2, div: 0xC8B888, par: 0xD5C290, win: 0x2A3848 },  // warm cream
-  { body: 0xD4C391, div: 0xAA9060, par: 0xBEA870, win: 0x2A3848 },  // sandy ochre
-  { body: 0xC2A878, div: 0x9A8050, par: 0xB09060, win: 0x283040 },  // warm caramel
-  { body: 0x7A9868, div: 0x5A7848, par: 0x698858, win: 0x283030 },  // sage green
-] as const;
+// ─── Palette (roads & environment only) ──────────────────────────────────────
 
 const P = {
-  hvac:        0xA8A8A0,
-  solar:       0x2A3858,
-  // commercial — muted mustard / warm brick
-  com_body:    0xD89F5C,
-  com_glass:   0x1A2830,
-  com_awningR: 0xB56C56,
-  com_awningG: 0x6B7B50,
-  com_parapet: 0x8C9A69,
-  com_divider: 0xB88040,
-  com_glazing: 0x7AACCC,
-  // public institutions — muted sage / olive
-  edu_body:    0x8C9A69,
-  edu_div:     0x6B7B50,
-  edu_par:     0x7D8E5A,
-  edu_win:     0x243028,
-  edu_play:    0x4A7A50,
-  edu_equip:   0xAA8844,
-  sec_body:    0x6B7B50,
-  sec_div:     0x4A5A38,
-  sec_par:     0x5A6A45,
-  sec_win:     0x303828,
-  sec_stripe:  0xE8D840,
-  gov_body:    0x9AAA78,
-  gov_div:     0x788858,
-  gov_par:     0x889868,
-  gov_win:     0x2A3A2A,
-  gov_col:     0xBECE9E,
-  gov_dome:    0xCEDEAE,
-  // employment
-  emp_body:    0x7A6EA8,
-  emp_div:     0x5A4E88,
-  emp_win:     0x25354C,
-  // roads & environment
-  road_asp:    0x3B3B3B,
-  road_dash:   0xF0ECE0,
-  sidewalk:    0x8D918D,
-  curb:        0x72767A,
-  sw_green:    0x4A6B3A,
-  trunk:       0x6B4A2A,
-  greens:      [0x4A6B3A, 0x688E4E, 0x3D5C30, 0x5A7A40, 0x496238] as const,
+  road_asp:  0x3B3B3B,
+  road_dash: 0xF0ECE0,
+  sidewalk:  0x8D918D,
+  curb:      0x72767A,
+  sw_green:  0x4A6B3A,
+  trunk:     0x6B4A2A,
+  greens:    [0x4A6B3A, 0x688E4E, 0x3D5C30, 0x5A7A40, 0x496238] as const,
 };
 
 // ─── Geometry primitives ──────────────────────────────────────────────────────
@@ -112,298 +73,7 @@ function cyl(rt: number, rb: number, h: number, segs: number, hex: number,
   return g;
 }
 
-// ─── Reusable parts ───────────────────────────────────────────────────────────
-
-function windowRow(cy: number, bw: number, wW: number, wH: number,
-                   hex: number): THREE.BufferGeometry[] {
-  const hw = bw / 2 + 0.002;  // near-flush — looks inset rather than protruding
-  const wd = 0.010;
-  const out: THREE.BufferGeometry[] = [];
-  for (const wx of [-bw * 0.25, bw * 0.25]) {
-    out.push(box(wW, wH, wd, hex,   wx, cy, -hw));
-    out.push(box(wW, wH, wd, hex,   wx, cy,  hw));
-    out.push(box(wd, wH, wW, hex, -hw, cy,   wx));
-    out.push(box(wd, wH, wW, hex,  hw, cy,   wx));
-  }
-  return out;
-}
-
-function parapetRim(bw: number, topY: number, hex: number): THREE.BufferGeometry[] {
-  const pH = 0.09, pW = 0.062;
-  const hw = bw / 2 + pW / 2;
-  return [
-    box(bw + pW*2, pH, pW, hex,   0, topY + pH/2, -hw),
-    box(bw + pW*2, pH, pW, hex,   0, topY + pH/2,  hw),
-    box(pW, pH, bw, hex, -hw, topY + pH/2, 0),
-    box(pW, pH, bw, hex,  hw, topY + pH/2, 0),
-  ];
-}
-
-function roofProps(topY: number, flavor: number): THREE.BufferGeometry[] {
-  const out: THREE.BufferGeometry[] = [];
-  // Base HVAC boxes (all flavors)
-  out.push(box(BW*0.24, 0.13, BW*0.24, P.hvac,  BW*0.18, topY+0.065, -BW*0.18));
-  out.push(box(BW*0.16, 0.10, BW*0.16, P.hvac, -BW*0.21, topY+0.050,  BW*0.19));
-
-  if (flavor === 0 || flavor === 2) {
-    // Solar panel array (flat, dark blue)
-    out.push(box(BW*0.46, 0.03, BW*0.22, P.solar, -BW*0.06, topY+0.015, BW*0.10));
-  }
-  if (flavor === 1) {
-    // Satellite dish: pedestal + tilted disc
-    out.push(cyl(0.025, 0.025, 0.13, 5, P.hvac, BW*0.20, topY+0.065, BW*0.20));
-    const disc = new THREE.CylinderGeometry(0.09, 0.09, 0.022, 8);
-    disc.rotateX(Math.PI / 3);
-    paint(disc, P.hvac);
-    disc.translate(BW*0.20, topY + 0.19, BW*0.20);
-    out.push(disc);
-  }
-  if (flavor === 3) {
-    // Water tower: tank + two legs
-    out.push(cyl(0.10, 0.10, 0.22, 7, P.hvac, -BW*0.18, topY+0.11, -BW*0.18));
-    out.push(box(0.03, 0.10, 0.03, P.hvac, -BW*0.18 - 0.07, topY+0.05, -BW*0.18));
-    out.push(box(0.03, 0.10, 0.03, P.hvac, -BW*0.18 + 0.07, topY+0.05, -BW*0.18));
-  }
-  return out;
-}
-
-// ─── Zone geometry factories ──────────────────────────────────────────────────
-
-function buildResGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
-  const fl     = FLAVORS[flavor];
-  const h      = 1.6 * Math.pow(2, upgrades);
-  const floors = Math.floor(h / FH);
-  const step   = Math.max(1, Math.floor(floors / 8)); // cap at ~8 window rows
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, fl.body, 0, h/2, 0));
-
-  for (let f = step; f < floors; f += step) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, fl.div, 0, f*FH, 0));
-  }
-
-  const wW = BW*0.17, wH = FH*0.42;
-  for (let f = 0; f < floors; f += step) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, fl.win).forEach(g => parts.push(g));
-  }
-
-  parapetRim(BW, h, fl.par).forEach(g => parts.push(g));
-  roofProps(h, flavor).forEach(g => parts.push(g));
-
-  return mergeGeometries(parts, false)!;
-}
-
-function buildComGeo(): THREE.BufferGeometry {
-  const h      = 2.4;
-  const floors = Math.floor(h / FH);
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, P.com_body, 0, h/2, 0));
-
-  // Ground-floor storefront glazing — tall dark glass panels
-  const gfH = FH * 0.82;
-  const hw  = BW/2 + 0.006;
-  for (const s of [-1, 1]) {
-    parts.push(box(BW*0.78, gfH, 0.009, P.com_glass,    0, gfH*0.52, s*hw));
-    parts.push(box(0.009, gfH, BW*0.78, P.com_glass, s*hw, gfH*0.52, 0));
-  }
-
-  // Angled awning canopy over front face — tilted 18° outward
-  const awnGeo = new THREE.BoxGeometry(BW*0.88, 0.04, BW*0.22);
-  awnGeo.rotateX(-0.32);
-  paint(awnGeo, P.com_awningR);
-  awnGeo.translate(0, FH + 0.07, BW/2 + 0.09);
-  parts.push(awnGeo);
-  // Awning support poles
-  for (const ax of [-BW*0.30, BW*0.30]) {
-    parts.push(cyl(0.015, 0.015, FH*0.75, 4, P.hvac, ax, FH*0.38, BW/2 + 0.085));
-  }
-
-  // Upper floors — warm divider bands + narrow glazing strips
-  const sH = FH*0.48, shw = BW/2 + 0.005;
-  for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.com_divider, 0, f*FH, 0));
-    const yc = f*FH + FH*0.55;
-    parts.push(box(BW-0.06, sH, 0.007, P.com_glazing,    0, yc, -shw));
-    parts.push(box(BW-0.06, sH, 0.007, P.com_glazing,    0, yc,  shw));
-    parts.push(box(0.007, sH, BW-0.06, P.com_glazing, -shw, yc,    0));
-    parts.push(box(0.007, sH, BW-0.06, P.com_glazing,  shw, yc,    0));
-  }
-
-  parapetRim(BW, h, P.com_parapet).forEach(g => parts.push(g));
-  roofProps(h, 0).forEach(g => parts.push(g));
-
-  return mergeGeometries(parts, false)!;
-}
-
-function buildMixedGeo(upgrades: number, flavor: number): THREE.BufferGeometry {
-  const fl     = FLAVORS[flavor];
-  const comH   = FH;
-  const resH   = 1.6 * Math.pow(2, upgrades);
-  const topW   = BW * 0.83;
-  const floors = Math.floor(resH / FH);
-  const step   = Math.max(1, Math.floor(floors / 8));
-  const parts: THREE.BufferGeometry[] = [];
-
-  // Commercial base
-  parts.push(box(BW, comH, BW, P.com_body, 0, comH/2, 0));
-  const hw = BW/2 + 0.006;
-  for (const s of [-1, 1]) {
-    parts.push(box(BW*0.74, comH*0.85, 0.012, P.com_glass,     0, comH*0.5, s*hw));
-    parts.push(box(0.012, comH*0.85, BW*0.74, P.com_glass, s*hw, comH*0.5, 0));
-  }
-  const mixAwn = new THREE.BoxGeometry(BW*0.86, 0.035, BW*0.18);
-  mixAwn.rotateX(-0.32);
-  paint(mixAwn, P.com_awningG);
-  mixAwn.translate(0, comH + 0.04, BW/2 + 0.08);
-  parts.push(mixAwn);
-
-  // Residential tower (set back)
-  parts.push(box(topW, resH, topW, fl.body, 0, comH+resH/2, 0));
-  for (let f = step; f < floors; f += step) {
-    parts.push(box(topW+0.01, 0.022, topW+0.01, fl.div, 0, comH+f*FH, 0));
-  }
-  const wW = topW*0.17, wH = FH*0.42;
-  for (let f = 0; f < floors; f += step) {
-    windowRow(comH + f*FH + FH*0.55, topW, wW, wH, fl.win).forEach(g => parts.push(g));
-  }
-
-  const totalH = comH + resH;
-  parapetRim(topW, totalH, fl.par).forEach(g => parts.push(g));
-  roofProps(totalH, flavor).forEach(g => parts.push(g));
-
-  return mergeGeometries(parts, false)!;
-}
-
-// ── Education: low warm-orange building with a rooftop play area ──────────────
-function buildPubEducationGeo(): THREE.BufferGeometry {
-  const h      = 1.6;
-  const floors = Math.floor(h / FH);
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, P.edu_body, 0, h/2, 0));
-  for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.edu_div, 0, f*FH, 0));
-  }
-  const wW = BW*0.20, wH = FH*0.46;
-  for (let f = 0; f < floors; f++) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, P.edu_win).forEach(g => parts.push(g));
-  }
-  parapetRim(BW, h, P.edu_par).forEach(g => parts.push(g));
-
-  // Rooftop play area — green turf + climbing frame
-  parts.push(box(BW*0.58, 0.05, BW*0.58, P.edu_play, 0, h+0.025, 0));
-  // Climbing frame: two vertical poles + horizontal bar
-  for (const px of [-BW*0.16, BW*0.16]) {
-    parts.push(cyl(0.022, 0.022, 0.30, 4, P.edu_equip, px, h+0.05+0.15, 0));
-  }
-  parts.push(box(BW*0.38, 0.025, 0.025, P.edu_equip, 0, h+0.05+0.30, 0));
-  // Flagpole
-  parts.push(cyl(0.012, 0.012, 0.40, 4, P.hvac, BW*0.30, h+0.05+0.20, BW*0.28));
-  parts.push(box(0.14, 0.055, 0.008, P.edu_equip, BW*0.30+0.07, h+0.05+0.36, BW*0.28));
-
-  return mergeGeometries(parts, false)!;
-}
-
-// ── Security: tall navy block with radio mast and warning stripe ──────────────
-function buildPubSecurityGeo(): THREE.BufferGeometry {
-  const h      = 2.8;
-  const floors = Math.floor(h / FH);
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, P.sec_body, 0, h/2, 0));
-  for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.sec_div, 0, f*FH, 0));
-  }
-  const wW = BW*0.14, wH = FH*0.38;
-  for (let f = 0; f < floors; f++) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, P.sec_win).forEach(g => parts.push(g));
-  }
-  parapetRim(BW, h, P.sec_par).forEach(g => parts.push(g));
-
-  // Warning stripe at base (yellow band across front face)
-  const hw = BW/2 + 0.005;
-  parts.push(box(BW*0.82, FH*0.16, 0.012, P.sec_stripe,  0, FH*0.12, hw));
-  parts.push(box(BW*0.82, FH*0.16, 0.012, P.sec_stripe,  0, FH*0.12, -hw));
-
-  // Radio mast: main shaft + 3 tapered crossbars
-  const mastH = 1.1;
-  parts.push(cyl(0.020, 0.020, mastH, 4, P.hvac, 0, h + mastH/2, 0));
-  for (const [yFrac, len] of [[0.55, 0.30], [0.72, 0.22], [0.88, 0.14]] as const) {
-    parts.push(box(len, 0.020, 0.020, P.hvac, 0, h + mastH * yFrac, 0));
-  }
-
-  return mergeGeometries(parts, false)!;
-}
-
-// ── Government: cream classical block with columns and central cupola ─────────
-function buildPubGovernmentGeo(): THREE.BufferGeometry {
-  const h      = 3.0;
-  const floors = Math.floor(h / FH);
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, P.gov_body, 0, h/2, 0));
-  for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.gov_div, 0, f*FH, 0));
-  }
-  const wW = BW*0.15, wH = FH*0.42;
-  for (let f = 0; f < floors; f++) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, P.gov_win).forEach(g => parts.push(g));
-  }
-  parapetRim(BW, h, P.gov_par).forEach(g => parts.push(g));
-
-  // Entrance columns across front face (5 thin pillars)
-  const frontZ = BW/2 + 0.025;
-  const colH   = h * 0.80;
-  for (const cx of [-BW*0.34, -BW*0.17, 0, BW*0.17, BW*0.34]) {
-    parts.push(cyl(0.038, 0.042, colH, 8, P.gov_col, cx, colH/2, frontZ));
-  }
-  // Triangular pediment lintel above columns
-  parts.push(box(BW*0.86, 0.055, 0.055, P.gov_div,  0, colH + 0.028, frontZ));
-  // Wide entrance steps
-  parts.push(box(BW*0.74, 0.055, BW*0.16, P.gov_div, 0, 0.028, frontZ + BW*0.06));
-
-  // Central dome (three stacked cylinders tapering upward)
-  parts.push(cyl(BW*0.24, BW*0.28, 0.28, 8, P.gov_col,  0, h + 0.14, 0));
-  parts.push(cyl(BW*0.14, BW*0.24, 0.22, 8, P.gov_dome, 0, h + 0.28 + 0.11, 0));
-  parts.push(cone(BW*0.07, 0.24, 8, P.gov_div,           0, h + 0.28 + 0.22 + 0.12, 0));
-
-  return mergeGeometries(parts, false)!;
-}
-
-function buildEmpGeo(): THREE.BufferGeometry {
-  const h      = 2.0;
-  const floors = Math.floor(h / FH);
-  const parts: THREE.BufferGeometry[] = [];
-
-  parts.push(box(BW, h, BW, P.emp_body, 0, h/2, 0));
-  for (let f = 1; f < floors; f++) {
-    parts.push(box(BW+0.01, 0.022, BW+0.01, P.emp_div, 0, f*FH, 0));
-  }
-  const wW = BW*0.15, wH = FH*0.40;
-  for (let f = 0; f < floors; f++) {
-    windowRow(f*FH + FH*0.55, BW, wW, wH, P.emp_win).forEach(g => parts.push(g));
-  }
-  const antH = 0.48;
-  parts.push(cyl(0.02, 0.02, antH, 5, P.hvac, 0, h+antH/2, 0));
-  parts.push(box(0.21, 0.04, 0.09, P.hvac, 0, h+antH+0.02, 0));
-
-  return mergeGeometries(parts, false)!;
-}
-
-function buildEmpOverlayGeo(): THREE.BufferGeometry {
-  const EH = FH * 2, EW = BW * 0.76;
-  const parts: THREE.BufferGeometry[] = [];
-  parts.push(box(EW, EH, EW, P.emp_body, 0, EH/2, 0));
-  parts.push(box(EW+0.01, 0.022, EW+0.01, P.emp_div, 0, FH, 0));
-  const wW = EW*0.16, wH = FH*0.40;
-  for (let f = 0; f < 2; f++) {
-    windowRow(f*FH + FH*0.55, EW, wW, wH, P.emp_win).forEach(g => parts.push(g));
-  }
-  return mergeGeometries(parts, false)!;
-}
-
-// ─── Road with full cross-section ────────────────────────────────────────────
+// ─── Road geometry ────────────────────────────────────────────────────────────
 
 type RoadDir = 'ns' | 'ew' | 'intersection' | 'isolated';
 const ROAD_DIRS: RoadDir[] = ['ns', 'ew', 'intersection', 'isolated'];
@@ -420,28 +90,22 @@ function buildRoadGeo(dir: RoadDir): THREE.BufferGeometry {
   const CS = CELL_SIZE;
 
   if (dir === 'intersection') {
-    // Full asphalt + corner sidewalk patches
     parts.push(box(CS*0.98, 0.08, CS*0.98, P.road_asp, 0, 0.04, 0));
     for (const [sx, sz] of [[-1,-1],[-1,1],[1,-1],[1,1]] as const) {
       parts.push(box(SW_W, 0.10, SW_W, P.sidewalk, sx*SW_OFF, 0.05, sz*SW_OFF));
     }
   } else {
     const isNS = dir === 'ns' || dir === 'isolated';
-    const L    = CS * 0.98; // cell length
+    const L    = CS * 0.98;
 
     if (isNS) {
-      // Asphalt centre strip
       parts.push(box(ASP_W, 0.08, L, P.road_asp, 0, 0.04, 0));
-      // Curb lips
       parts.push(box(0.04, 0.11, L, P.curb, -(ASP_W/2+0.02), 0.055, 0));
       parts.push(box(0.04, 0.11, L, P.curb,   ASP_W/2+0.02,  0.055, 0));
-      // Sidewalks
       parts.push(box(SW_W, 0.10, L, P.sidewalk, -SW_OFF, 0.05, 0));
       parts.push(box(SW_W, 0.10, L, P.sidewalk,  SW_OFF, 0.05, 0));
-      // Street trees (one per sidewalk side)
       streetTree(-SW_OFF, 0).forEach(g => parts.push(g));
       streetTree( SW_OFF, 0).forEach(g => parts.push(g));
-      // Centre-line dashes
       for (const off of [-0.20, 0.20]) {
         const g = new THREE.PlaneGeometry(CS*0.045, CS*0.36);
         g.rotateX(-Math.PI/2);
@@ -470,7 +134,7 @@ function buildRoadGeo(dir: RoadDir): THREE.BufferGeometry {
   return mergeGeometries(parts, false)!;
 }
 
-// ─── Landscape trees — mixed leafy (dodecahedron) and pine (stacked cones) ────
+// ─── Landscape trees ──────────────────────────────────────────────────────────
 
 function buildTreeGeo(variant: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -481,7 +145,6 @@ function buildTreeGeo(variant: number): THREE.BufferGeometry {
   const green2 = P.greens[(variant + 2) % P.greens.length];
 
   if (variant % 2 === 0) {
-    // Leafy rounded tree — low-poly sphere canopy (indexed, merges cleanly)
     const main = new THREE.SphereGeometry(0.26, 7, 5);
     main.scale(1.05, 0.86, 1.05);
     paint(main, green);
@@ -494,7 +157,6 @@ function buildTreeGeo(variant: number): THREE.BufferGeometry {
     sub.translate(0.12, trunkH + 0.36, -0.07);
     parts.push(sub);
   } else {
-    // Pine tree — 3 stacked cones, organic green variation per tier
     for (const [r, h, yOff, gIdx] of [
       [0.30, 0.34, 0.00, 0],
       [0.22, 0.28, 0.19, 2],
@@ -519,7 +181,52 @@ function roadDirection(cell: Cell, cells: CellMap): RoadDir {
   return 'isolated';
 }
 
-// ─── Hover colours ────────────────────────────────────────────────────────────
+// ─── Ghost box heights per zone type ─────────────────────────────────────────
+
+const GHOST_HEIGHTS: Partial<Record<ZoneType, (u: number) => number>> = {
+  residential:       (u) => 1.6 * Math.pow(2, Math.min(u, 5)),
+  commercial:        ()  => 2.4,
+  mixed:             (u) => FH + 1.6 * Math.pow(2, Math.min(u, 5)),
+  public_education:  ()  => 1.6,
+  public_security:   ()  => 2.8,
+  public_government: ()  => 3.0,
+  employment:        ()  => 2.0,
+};
+
+// ─── GLB manifests ────────────────────────────────────────────────────────────
+// upgrades 0-1 → low_density, 2-3 → mid_density, 4-5 → high_density.
+// Only residential GLBs exist; all other zones remain as ghost boxes.
+
+const GLB_MANIFESTS: Record<string, string[]> = {
+  residential_0: [
+    '/models/residential/low_density/res_building_small_06.glb',
+    '/models/residential/low_density/res_small_Building1.glb',
+    '/models/residential/low_density/res_small_Simple%20Building.glb',
+  ],
+  residential_1: [
+    '/models/residential/low_density/res_building_small_06.glb',
+    '/models/residential/low_density/res_small_Building1.glb',
+    '/models/residential/low_density/res_small_Simple%20Building.glb',
+  ],
+  residential_2: [
+    '/models/residential/mid_density/res_building_06.glb',
+    '/models/residential/mid_density/res_mid_Building2.glb',
+  ],
+  residential_3: [
+    '/models/residential/mid_density/res_building_06.glb',
+    '/models/residential/mid_density/res_mid_Building2.glb',
+  ],
+  residential_4: [
+    '/models/residential/high_density/res_high_buildingH1.glb',
+    '/models/residential/high_density/res_43-blend.glb',
+  ],
+  residential_5: [
+    '/models/residential/high_density/res_high_buildingH1.glb',
+    '/models/residential/high_density/res_43-blend.glb',
+  ],
+};
+
+// ─── Hover colors ─────────────────────────────────────────────────────────────
 
 const HOVER_COLOR: Partial<Record<ToolType, number>> = {
   road:             0x9A9A9A,
@@ -531,7 +238,7 @@ const HOVER_COLOR: Partial<Record<ToolType, number>> = {
   demolish:         0xFF6666,
 };
 
-// ─── BuildingManager ──────────────────────────────────────────────────────────
+// ─── Animation entry ──────────────────────────────────────────────────────────
 
 interface AnimEntry {
   mesh:    THREE.Mesh;
@@ -539,25 +246,60 @@ interface AnimEntry {
   elapsed: number;
 }
 
+// ─── Shared GLTFLoader ────────────────────────────────────────────────────────
+
+const loader = new GLTFLoader();
+
+// ─── BuildingManager ──────────────────────────────────────────────────────────
+
 export class BuildingManager {
-  private scene:     THREE.Scene;
-  private meshes:    Map<string, THREE.InstancedMesh> = new Map();
-  private hoverMesh: THREE.Mesh;
-  private animQueue: AnimEntry[] = [];
+  private scene:        THREE.Scene;
+  private meshes:       Map<string, THREE.InstancedMesh> = new Map(); // roads + trees
+  private overlayMesh:  THREE.InstancedMesh;  // flat colored plane per zoned cell
+  private ghostMesh:    THREE.InstancedMesh;  // white semi-transparent box per unloaded cell
+  private glbObjects:   Map<string, THREE.Object3D> = new Map();
+  private pendingLoads: Set<string> = new Set();
+  private failedLoads:  Set<string> = new Set();
+  private lastCells:    CellMap | null = null;
+  private hoverMesh:    THREE.Mesh;
+  private animQueue:    AnimEntry[] = [];
   private static readonly ANIM_DUR = 0.25;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
-    this.initMeshes();
 
-    const geo = new THREE.BoxGeometry(CELL_SIZE*0.96, 0.06, CELL_SIZE*0.96);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.22 });
-    this.hoverMesh         = new THREE.Mesh(geo, mat);
+    // Zone overlay: flat plane per zoned non-road cell, per-instance zone color
+    const overlayGeo = new THREE.PlaneGeometry(CELL_SIZE * 0.94, CELL_SIZE * 0.94);
+    overlayGeo.rotateX(-Math.PI / 2);
+    const overlayMat         = new THREE.MeshBasicMaterial();
+    this.overlayMesh         = new THREE.InstancedMesh(overlayGeo, overlayMat, MAX);
+    this.overlayMesh.count   = 0;
+    this.overlayMesh.frustumCulled = false;
+    scene.add(this.overlayMesh);
+
+    // Ghost boxes: white semi-transparent, one per zoned cell without a loaded GLB
+    const ghostGeo  = new THREE.BoxGeometry(BW, 1, BW); // Y scaled per-instance
+    const ghostMat  = new THREE.MeshBasicMaterial({
+      color:       0xFFFFFF,
+      transparent: true,
+      opacity:     0.35,
+      depthWrite:  false,
+    });
+    this.ghostMesh         = new THREE.InstancedMesh(ghostGeo, ghostMat, MAX);
+    this.ghostMesh.count   = 0;
+    this.ghostMesh.frustumCulled = false;
+    scene.add(this.ghostMesh);
+
+    this.initStaticMeshes();
+
+    const hgeo = new THREE.BoxGeometry(CELL_SIZE*0.96, 0.06, CELL_SIZE*0.96);
+    const hmat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.22 });
+    this.hoverMesh         = new THREE.Mesh(hgeo, hmat);
     this.hoverMesh.visible = false;
     scene.add(this.hoverMesh);
   }
 
-  private initMeshes(): void {
+  private initStaticMeshes(): void {
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness:    0.85,
@@ -574,27 +316,24 @@ export class BuildingManager {
       this.meshes.set(key, m);
     };
 
-    // Residential: 4 flavors × 6 upgrade levels
-    for (let f = 0; f < 4; f++) {
-      for (let u = 0; u <= 5; u++) reg(`res_${f}_${u}`, buildResGeo(u, f));
-    }
-    // Mixed: 4 flavors × 6 upgrade levels
-    for (let f = 0; f < 4; f++) {
-      for (let u = 0; u <= 5; u++) reg(`mix_${f}_${u}`, buildMixedGeo(u, f));
-    }
-
-    reg('commercial',       buildComGeo());
-    reg('public_education', buildPubEducationGeo());
-    reg('public_security',  buildPubSecurityGeo());
-    reg('public_government',buildPubGovernmentGeo());
-    reg('employment',       buildEmpGeo());
-    reg('emp_overlay', buildEmpOverlayGeo());
-
     for (const dir of ROAD_DIRS) reg(`road_${dir}`, buildRoadGeo(dir));
-    for (let v = 0; v < 5; v++) reg(`tree_${v}`, buildTreeGeo(v));
+    for (let v = 0; v < 5; v++)  reg(`tree_${v}`,   buildTreeGeo(v));
   }
 
   rebuildAll(cells: CellMap): void {
+    this.lastCells = cells;
+
+    // Discard GLB objects for demolished/rezoned cells
+    this.glbObjects.forEach((obj, key) => {
+      const cell = cells.get(key);
+      if (!cell || cell.zone === 'empty') {
+        this.scene.remove(obj);
+        this.glbObjects.delete(key);
+        this.failedLoads.delete(key);
+      }
+    });
+
+    // ── Roads + trees (instanced, vertex-colored) ─────────────────────────────
     const buf  = new Map<string, THREE.Matrix4[]>();
     const push = (key: string, m: THREE.Matrix4) => {
       let a = buf.get(key);
@@ -610,8 +349,8 @@ export class BuildingManager {
       const wx = cell.x * CELL_SIZE + CELL_SIZE / 2;
       const wz = cell.z * CELL_SIZE + CELL_SIZE / 2;
 
-      // Landscape trees on empty land
       if (cell.zone === 'empty') {
+        if (rng(cell.x, cell.z, 99) > TREE_PROB) return;
         const count = Math.floor(rng(cell.x, cell.z, 0) * 2) + 1;
         for (let i = 0; i < count; i++) {
           const ox = (rng(cell.x, cell.z, i*5+1) - 0.5) * CELL_SIZE * 0.50;
@@ -625,68 +364,112 @@ export class BuildingManager {
         return;
       }
 
-      const flavor = Math.floor(rng(cell.x, cell.z, 0) * 4);
-      const upg    = Math.min(cell.upgrades, 5);
-      const origin = new THREE.Matrix4().compose(new THREE.Vector3(wx, 0, wz), Q0, S1);
-
-      let key: string | null = null;
-      let top                = 0;
-
-      switch (cell.zone) {
-        case 'road':
-          key = `road_${roadDirection(cell, cells)}`;
-          break;
-        case 'residential':
-          key = `res_${flavor}_${upg}`;
-          top = 1.6 * Math.pow(2, upg);
-          break;
-        case 'commercial':
-          key = 'commercial';
-          top = 2.4;
-          break;
-        case 'mixed':
-          key = `mix_${flavor}_${upg}`;
-          top = FH + 1.6 * Math.pow(2, upg);
-          break;
-        case 'public_education':
-          key = 'public_education';
-          top = 1.6;
-          break;
-        case 'public_security':
-          key = 'public_security';
-          top = 2.8;
-          break;
-        case 'public_government':
-          key = 'public_government';
-          top = 3.0;
-          break;
-        case 'employment':
-          key = 'employment';
-          top = 2.0;
-          break;
-      }
-
-      if (key) push(key, origin);
-
-      if (cell.employment && top > 0) {
-        push('emp_overlay', new THREE.Matrix4().compose(
-          new THREE.Vector3(wx, top, wz), Q0, S1,
-        ));
+      if (cell.zone === 'road') {
+        push(`road_${roadDirection(cell, cells)}`,
+          new THREE.Matrix4().compose(new THREE.Vector3(wx, 0, wz), Q0, S1));
       }
     });
 
     this.meshes.forEach((mesh, key) => {
-      const mats = buf.get(key);
-      mesh.visible = !!mats && mats.length > 0;
+      const mats    = buf.get(key);
+      mesh.visible  = !!mats && mats.length > 0;
       if (!mesh.visible) { mesh.count = 0; return; }
       mats!.forEach((m, i) => mesh.setMatrixAt(i, m));
       mesh.count                      = mats!.length;
       mesh.instanceMatrix.needsUpdate = true;
     });
+
+    this.rebuildOverlay(cells);
+    this.rebuildGhosts(cells);
+    this.startGlbLoads(cells);
+  }
+
+  private rebuildOverlay(cells: CellMap): void {
+    const Q0 = new THREE.Quaternion();
+    const S1 = new THREE.Vector3(1, 1, 1);
+    let count = 0;
+
+    cells.forEach((cell) => {
+      if (cell.terrain !== 'land' || cell.zone === 'empty' || cell.zone === 'road') return;
+      const wx = cell.x * CELL_SIZE + CELL_SIZE / 2;
+      const wz = cell.z * CELL_SIZE + CELL_SIZE / 2;
+
+      this.overlayMesh.setMatrixAt(count,
+        new THREE.Matrix4().compose(new THREE.Vector3(wx, 0.015, wz), Q0, S1));
+      this.overlayMesh.setColorAt(count, new THREE.Color(ZONE_COLORS[cell.zone]));
+      count++;
+    });
+
+    this.overlayMesh.count = count;
+    this.overlayMesh.instanceMatrix.needsUpdate = true;
+    if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
+  }
+
+  private rebuildGhosts(cells: CellMap): void {
+    const Q0 = new THREE.Quaternion();
+    let count = 0;
+
+    cells.forEach((cell) => {
+      if (cell.terrain !== 'land' || cell.zone === 'empty' || cell.zone === 'road') return;
+      if (this.glbObjects.has(cellKey(cell.x, cell.z))) return; // real model loaded
+
+      const hFn = GHOST_HEIGHTS[cell.zone];
+      const h   = hFn ? hFn(cell.upgrades) : 1.6;
+      const wx  = cell.x * CELL_SIZE + CELL_SIZE / 2;
+      const wz  = cell.z * CELL_SIZE + CELL_SIZE / 2;
+
+      this.ghostMesh.setMatrixAt(count,
+        new THREE.Matrix4().compose(
+          new THREE.Vector3(wx, h / 2, wz),
+          Q0,
+          new THREE.Vector3(1, h, 1),
+        ));
+      count++;
+    });
+
+    this.ghostMesh.count = count;
+    this.ghostMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private startGlbLoads(cells: CellMap): void {
+    cells.forEach((cell) => {
+      if (cell.terrain !== 'land' || cell.zone === 'empty' || cell.zone === 'road') return;
+      const key = cellKey(cell.x, cell.z);
+      if (this.glbObjects.has(key) || this.pendingLoads.has(key) || this.failedLoads.has(key)) return;
+
+      const manifestKey = `${cell.zone}_${Math.min(cell.upgrades, 5)}`;
+      const urls        = GLB_MANIFESTS[manifestKey];
+      if (!urls || urls.length === 0) return;
+
+      const url  = urls[Math.floor(rng(cell.x, cell.z, 7) * urls.length)];
+      const zone = cell.zone;
+      this.pendingLoads.add(key);
+
+      loader.load(url, (gltf) => {
+        this.pendingLoads.delete(key);
+        const current = this.lastCells?.get(key);
+        if (!current || current.zone !== zone) return; // stale — cell was rezoned
+
+        const obj = gltf.scene;
+        obj.position.set(cell.x * CELL_SIZE + CELL_SIZE / 2, 0, cell.z * CELL_SIZE + CELL_SIZE / 2);
+        obj.traverse(child => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow    = true;
+            child.receiveShadow = true;
+          }
+        });
+        this.scene.add(obj);
+        this.glbObjects.set(key, obj);
+        if (this.lastCells) this.rebuildGhosts(this.lastCells);
+      }, undefined, () => {
+        this.pendingLoads.delete(key);
+        this.failedLoads.add(key);
+      });
+    });
   }
 
   spawnPopAnim(x: number, z: number): void {
-    const geo = new THREE.BoxGeometry(CELL_SIZE * 0.88, 5, CELL_SIZE * 0.88);
+    const geo  = new THREE.BoxGeometry(CELL_SIZE * 0.88, 5, CELL_SIZE * 0.88);
     geo.translate(0, 2.5, 0);
     const mat  = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.28 });
     const mesh = new THREE.Mesh(geo, mat);
@@ -735,6 +518,14 @@ export class BuildingManager {
     this.animQueue = [];
     this.meshes.forEach(m => { this.scene.remove(m); m.geometry.dispose(); });
     this.meshes.clear();
+    this.glbObjects.forEach(obj => this.scene.remove(obj));
+    this.glbObjects.clear();
+    this.scene.remove(this.overlayMesh);
+    (this.overlayMesh.material as THREE.MeshBasicMaterial).dispose();
+    this.overlayMesh.geometry.dispose();
+    this.scene.remove(this.ghostMesh);
+    (this.ghostMesh.material as THREE.MeshBasicMaterial).dispose();
+    this.ghostMesh.geometry.dispose();
     this.scene.remove(this.hoverMesh);
     (this.hoverMesh.material as THREE.MeshBasicMaterial).dispose();
     this.hoverMesh.geometry.dispose();
